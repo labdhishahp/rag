@@ -11,17 +11,25 @@ PDF → extract → chunk → embed → FAISS → question → retrieve → prom
 ## Setup
 
 ```bash
-python -m venv venv
+python3 -m venv venv
 source venv/bin/activate          # Windows: venv\Scripts\activate
 pip install -r requirements.txt
 
 # Sample PDF for testing
-python scripts/create_sample_pdf.py
+python3 scripts/create_sample_pdf.py
 
-# API key for Phase 2 LLM (OpenAI)
+# API key for Phase 2 LLM
 cp .env.example .env
-# Edit .env and set OPENAI_API_KEY=sk-...
+# Edit .env and set LLM_API_KEY=sk-...
 ```
+
+### LLM provider
+
+Phase 2 uses **OpenAI `gpt-4o-mini`** via the OpenAI API:
+
+- Inexpensive and suitable for learning projects
+- Strong instruction-following for grounded Q&A
+- Replaceable — implement `LLMClient` in `src/llm.py` to swap providers
 
 ## Run Phase 2 (Streamlit UI)
 
@@ -29,16 +37,15 @@ cp .env.example .env
 streamlit run app.py
 ```
 
-1. Upload a PDF
-2. Click **Process document**
-3. Ask a question
-4. See answer, source pages, and retrieved chunks
+1. Upload a PDF (indexed once automatically)
+2. Ask questions — only retrieval + LLM run per question
+3. See answer, expandable sources, retrieved context, and RAG flow explanation
 
 ## Run Phase 1 (retrieval only, no LLM)
 
 ```bash
 cd src
-python main.py
+python3 main.py
 ```
 
 Prints retrieved chunks for manual inspection — useful for debugging retrieval before trusting the LLM.
@@ -49,9 +56,10 @@ Prints retrieved chunks for manual inspection — useful for debugging retrieval
 |---------|-------|---------|---------|
 | `CHUNK_SIZE` | `src/pipeline.py` | 500 | Characters per chunk |
 | `CHUNK_OVERLAP` | `src/pipeline.py` | 50 | Overlap between chunks |
-| `top_k` | Streamlit sidebar | 3 | Chunks sent to LLM |
+| `Top K` | Streamlit sidebar | 3 | Chunks sent to LLM (1, 3, 5, or 10) |
 | Similarity threshold | Streamlit sidebar | 0.35 | Low-confidence warning cutoff |
-| OpenAI model | `src/llm.py` | gpt-4o-mini | LLM used for answers |
+| LLM model | `src/llm.py` | gpt-4o-mini | Model used for answers |
+| `LLM_API_KEY` | `.env` | — | OpenAI API key |
 
 ## Project layout
 
@@ -65,11 +73,11 @@ Prints retrieved chunks for manual inspection — useful for debugging retrieval
 │   ├── embeddings.py         # text → vectors
 │   ├── vector_store.py       # FAISS index
 │   ├── retriever.py          # question → top-k chunks
-│   ├── pipeline.py           # PDF → Retriever (shared)
+│   ├── pipeline.py           # PDF → Retriever + metadata
 │   ├── prompt_builder.py     # chunks + question → prompt
 │   ├── llm.py                # LLM API (replaceable)
 │   ├── rag.py                # full RAG orchestration
-│   └── main.py                 # Phase 1 CLI
+│   └── main.py               # Phase 1 CLI
 ├── TESTING.md                # manual test checklist
 ├── requirements.txt
 └── README.md
