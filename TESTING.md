@@ -4,7 +4,7 @@ Use `data/sample.pdf` (run `python scripts/create_sample_pdf.py` if needed).
 
 Start the app: `streamlit run app.py`
 
-Ensure `.env` contains `LLM_API_KEY=sk-...` before testing answers.
+Ensure `.env` contains `GEMINI_API_KEY=...` before testing answers.
 
 ---
 

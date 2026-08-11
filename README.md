@@ -15,19 +15,19 @@ python3 -m venv venv
 source venv/bin/activate          # Windows: venv\Scripts\activate
 pip install -r requirements.txt
 
-# Sample PDF for testing
+# Optional: create a sample PDF for manual testing (CLI / TESTING.md only)
 python3 scripts/create_sample_pdf.py
 
 # API key for Phase 2 LLM
 cp .env.example .env
-# Edit .env and set LLM_API_KEY=sk-...
+# Edit .env and set GEMINI_API_KEY=your-key-here
 ```
 
 ### LLM provider
 
-Phase 2 uses **OpenAI `gpt-4o-mini`** via the OpenAI API:
+Phase 2 uses **Google Gemini `gemini-2.0-flash`** via the Gemini API:
 
-- Inexpensive and suitable for learning projects
+- Free-tier friendly and suitable for learning projects
 - Strong instruction-following for grounded Q&A
 - Replaceable — implement `LLMClient` in `src/llm.py` to swap providers
 
@@ -37,7 +37,7 @@ Phase 2 uses **OpenAI `gpt-4o-mini`** via the OpenAI API:
 streamlit run app.py
 ```
 
-1. Upload a PDF (indexed once automatically)
+1. Upload your own PDF or DOCX (indexed once automatically — no pre-loaded document)
 2. Ask questions — only retrieval + LLM run per question
 3. See answer, expandable sources, retrieved context, and RAG flow explanation
 
@@ -58,8 +58,8 @@ Prints retrieved chunks for manual inspection — useful for debugging retrieval
 | `CHUNK_OVERLAP` | `src/pipeline.py` | 50 | Overlap between chunks |
 | `Top K` | Streamlit sidebar | 3 | Chunks sent to LLM (1, 3, 5, or 10) |
 | Similarity threshold | Streamlit sidebar | 0.35 | Low-confidence warning cutoff |
-| LLM model | `src/llm.py` | gpt-4o-mini | Model used for answers |
-| `LLM_API_KEY` | `.env` | — | OpenAI API key |
+| LLM model | `src/llm.py` | gemini-2.0-flash | Model used for answers |
+| `GEMINI_API_KEY` | `.env` | — | Google Gemini API key |
 
 ## Project layout
 

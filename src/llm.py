@@ -1,14 +1,14 @@
 """
 LLM module — isolated, replaceable text generation.
 
-Provider selected for this project: OpenAI gpt-4o-mini
-  - Inexpensive and suitable for learning projects
+Provider: Google Gemini (gemini-2.0-flash)
+  - Free-tier friendly for learning projects
   - Strong instruction-following for grounded Q&A
-  - Easy API; swap providers by implementing LLMClient
+  - Official SDK: google-genai
 
 Why isolate the LLM?
-  Retrieval and prompting should not depend on OpenAI vs another vendor.
-  Swap providers by changing one module.
+  Retrieval and prompting should not depend on which API vendor you use.
+  Swap providers by implementing LLMClient in this module only.
 
 Why can the LLM still hallucinate even with RAG?
   The model is a probabilistic text generator. It may ignore instructions,
@@ -34,20 +34,19 @@ logger = logging.getLogger(__name__)
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent
 load_dotenv(_PROJECT_ROOT / ".env")
 
-DEFAULT_MODEL = "gpt-4o-mini"
+DEFAULT_MODEL = "gemini-2.0-flash"
 
 
 def _get_api_key() -> str:
     """
-    Read API key from environment.
+    Read Gemini API key from environment.
 
-    Supports LLM_API_KEY (preferred) and OPENAI_API_KEY (legacy fallback).
-    Never hardcode secrets in source code.
+    Set GEMINI_API_KEY in your .env file. Never hardcode secrets in source code.
     """
-    key = os.getenv("LLM_API_KEY") or os.getenv("OPENAI_API_KEY")
+    key = os.getenv("GEMINI_API_KEY")
     if not key:
         raise ValueError(
-            "LLM_API_KEY not found. Copy .env.example to .env and set your API key."
+            "GEMINI_API_KEY not found. Copy .env.example to .env and set your API key."
         )
     return key
 
@@ -79,8 +78,8 @@ class LLMClient(ABC):
         return self.generate(prompt)
 
 
-class OpenAIClient(LLMClient):
-    """OpenAI API implementation using gpt-4o-mini by default."""
+class GeminiClient(LLMClient):
+    """Google Gemini API implementation using the official google-genai SDK."""
 
     def __init__(
         self,
@@ -88,60 +87,63 @@ class OpenAIClient(LLMClient):
         api_key: Optional[str] = None,
     ):
         try:
-            from openai import APIConnectionError, APIStatusError, OpenAI, RateLimitError
+            from google import genai
+            from google.genai import errors, types
         except ImportError as exc:
             raise ImportError(
-                "openai package is required. Install with: pip install openai"
+                "google-genai package is required. Install with: pip install google-genai"
             ) from exc
 
         self.model = model
         self._api_key = api_key or _get_api_key()
-        self._client = OpenAI(api_key=self._api_key)
-        self._APIConnectionError = APIConnectionError
-        self._APIStatusError = APIStatusError
-        self._RateLimitError = RateLimitError
+        self._client = genai.Client(api_key=self._api_key)
+        self._types = types
+        self._errors = errors
 
     def generate(self, prompt: str) -> str:
         try:
-            response = self._client.chat.completions.create(
+            response = self._client.models.generate_content(
                 model=self.model,
-                messages=[{"role": "user", "content": prompt}],
-                temperature=0.2,
+                contents=prompt,
+                config=self._types.GenerateContentConfig(
+                    temperature=0.2,
+                ),
             )
-            content = response.choices[0].message.content
-            if not content:
+            text = response.text
+            if not text:
                 raise LLMError("The LLM returned an empty response.")
-            return content.strip()
-        except self._RateLimitError as exc:
-            logger.exception("OpenAI rate limit exceeded")
-            raise LLMError(
-                "The LLM API rate limit was exceeded. Please wait and try again."
-            ) from exc
-        except self._APIConnectionError as exc:
-            logger.exception("OpenAI connection error")
-            raise LLMError(
-                "Could not connect to the LLM API. Check your internet connection."
-            ) from exc
-        except self._APIStatusError as exc:
-            logger.exception("OpenAI API status error: %s", exc.status_code)
-            if exc.status_code == 401:
+            return text.strip()
+        except self._errors.ClientError as exc:
+            logger.exception("Gemini API client error")
+            message = str(exc).lower()
+            if "api key" in message or "401" in message or "403" in message:
                 raise LLMError(
-                    "Invalid API key. Check LLM_API_KEY in your .env file."
+                    "Invalid API key. Check GEMINI_API_KEY in your .env file."
+                ) from exc
+            if "429" in message or "quota" in message or "rate" in message:
+                raise LLMError(
+                    "The Gemini API rate limit was exceeded. Please wait and try again."
                 ) from exc
             raise LLMError(
-                f"The LLM API returned an error (status {exc.status_code}). "
-                "See terminal logs for details."
+                "The Gemini API returned an error. See terminal logs for details."
             ) from exc
+        except self._errors.ServerError as exc:
+            logger.exception("Gemini API server error")
+            raise LLMError(
+                "The Gemini API is temporarily unavailable. Please try again later."
+            ) from exc
+        except LLMError:
+            raise
         except Exception as exc:
-            logger.exception("Unexpected LLM error")
+            logger.exception("Unexpected Gemini LLM error")
             raise LLMError(
                 "An unexpected error occurred while calling the LLM. "
                 "See terminal logs for details."
             ) from exc
 
 
-def create_llm(provider: str = "openai") -> LLMClient:
+def create_llm(provider: str = "gemini") -> LLMClient:
     """Factory function to create an LLM client."""
-    if provider == "openai":
-        return OpenAIClient()
+    if provider == "gemini":
+        return GeminiClient()
     raise ValueError(f"Unknown LLM provider: {provider}")
