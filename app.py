@@ -44,8 +44,12 @@ st.set_page_config(
     layout="wide",
 )
 
-st.title("RAG Document Chat")
-st.caption("Upload a document and ask questions about its contents.")
+_header_col, _chunks_col = st.columns([11, 1])
+with _header_col:
+    st.title("RAG Document Chat")
+    st.caption("Upload a document and ask questions about its contents.")
+with _chunks_col:
+    _chunks_btn_slot = st.empty()
 
 # ---------------------------------------------------------------------------
 # Sidebar
@@ -362,6 +366,33 @@ def _render_question_section() -> None:
         _render_answer(st.session_state.last_result)
 
 
+@st.dialog("Document Chunks")
+def _show_chunks_dialog() -> None:
+    meta = st.session_state.doc_metadata
+    chunks = meta.get("chunks") if meta else None
+    if not chunks:
+        st.write("No document uploaded.")
+        return
+
+    for i, chunk in enumerate(chunks):
+        st.markdown(f"**Chunk {chunk['chunk_id']}**")
+        st.markdown(f"Page: {chunk['page_number']}")
+        st.markdown(f"Length: {len(chunk['text'])} characters")
+        st.markdown("")
+        st.text(chunk["text"])
+        if i < len(chunks) - 1:
+            st.divider()
+
+
+def _render_chunks_button() -> None:
+    meta = st.session_state.doc_metadata
+    chunks = meta.get("chunks") if meta else None
+    document_ready = st.session_state.retriever is not None and chunks
+    with _chunks_btn_slot.container():
+        if st.button("Chunks", disabled=not document_ready, key="chunks_viewer_btn"):
+            _show_chunks_dialog()
+
+
 def _render_chat_history() -> None:
     if not st.session_state.chat_history:
         return
@@ -387,3 +418,4 @@ st.divider()
 _render_question_section()
 st.divider()
 _render_chat_history()
+_render_chunks_button()
