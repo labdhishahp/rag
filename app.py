@@ -388,6 +388,19 @@ def _render_chunks_button() -> None:
     meta = st.session_state.doc_metadata
     chunks = meta.get("chunks") if meta else None
     document_ready = st.session_state.retriever is not None and chunks
+
+    # TEMPORARY DIAGNOSTIC — remove after debugging
+    st.warning(
+        f"**Chunks button diagnostic**\n\n"
+        f"Retriever exists: {'YES' if st.session_state.retriever is not None else 'NO'}\n\n"
+        f"doc_metadata exists: {'YES' if meta is not None else 'NO'}\n\n"
+        f"chunks exists: {'YES' if chunks is not None else 'NO'}\n\n"
+        f"chunks type: {type(chunks).__name__}\n\n"
+        f"chunks length: {len(chunks) if chunks is not None else 'N/A'}\n\n"
+        f"state/status: ui_state={st.session_state.ui_state}"
+        + (f", metadata status={meta.get('status')}" if meta else "")
+    )
+
     with _chunks_btn_slot.container():
         if st.button("Chunks", disabled=not document_ready, key="chunks_viewer_btn"):
             _show_chunks_dialog()
