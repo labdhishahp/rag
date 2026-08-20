@@ -24,19 +24,19 @@ _DOCX_PAGE_TARGET_CHARS = 1500
 SUPPORTED_EXTENSIONS = {".pdf", ".docx"}
 
 
-def load_pdf(pdf_path: Union[str, Path]) -> list[dict]:
+def load_pdf(pdf_path: Union[str, Path]) -> list[dict]:    #Create a function called load_pdf that accepts a file path and returns a list of dictionaries.
     """Extract text from every page of a PDF file on disk."""
-    pdf_path = Path(pdf_path)
+    pdf_path = Path(pdf_path)   ## convert the file path to a Path object.- path ma convert karse
     if not pdf_path.exists():
         raise FileNotFoundError(f"PDF not found: {pdf_path}")
 
-    with open(pdf_path, "rb") as f:
+    with open(pdf_path, "rb") as f:    #open means open the file in binary mode.,  rb--read in binary mode.
         return load_pdf_from_bytes(f.read())
+ 
 
-
-def load_pdf_from_bytes(pdf_bytes: bytes) -> list[dict]:
+def load_pdf_from_bytes(pdf_bytes: bytes) -> list[dict]:   #this creates func that accepts raw Pdf bytes  than file name  (why not filename- as u dont have to save it fitst)
     """Extract text from a PDF provided as raw bytes."""
-    if not pdf_bytes:
+    if not pdf_bytes:    #agar bytes empty hai to error throw karega.
         raise ValueError("PDF bytes are empty.")
 
     pages: list[dict] = []
@@ -47,7 +47,7 @@ def load_pdf_from_bytes(pdf_bytes: bytes) -> list[dict]:
 
         for page_index in range(doc.page_count):
             page = doc[page_index]
-            text = page.get_text("text").strip()
+            text = page.get_text("text").strip()   ##for eg. it removes whitespaces and newlines.
             pages.append(
                 {
                     "page_number": page_index + 1,
@@ -82,15 +82,15 @@ def load_docx_from_bytes(docx_bytes: bytes) -> list[dict]:
             "python-docx is required for .docx files. Install with: pip install python-docx"
         ) from exc
 
-    doc = Document(io.BytesIO(docx_bytes))
+    doc = Document(io.BytesIO(docx_bytes))  #docx_bytes are raw bytes. ,,,io.BytesIO(...) makes them behave like a file.
 
     paragraphs: list[str] = []
     for para in doc.paragraphs:
-        text = para.text.strip()
+        text = para.text.strip()   #Get paragraph text and remove surrounding whitespace.
         if text:
             paragraphs.append(text)
 
-    for table in doc.tables:
+    for table in doc.tables:     #Take all the non-empty cells in this row, clean their text, and join them together with | between them.
         for row in table.rows:
             row_text = " | ".join(cell.text.strip() for cell in row.cells if cell.text.strip())
             if row_text:
@@ -102,26 +102,26 @@ def load_docx_from_bytes(docx_bytes: bytes) -> list[dict]:
             "The file may be empty or contain only images."
         )
 
-    pages: list[dict] = []
-    page_num = 1
-    buffer: list[str] = []
-    char_count = 0
+    pages: list[dict] = []   #completed pseudo-pages
+    page_num = 1      #current pseudo-page number
+    buffer: list[str] = []    #paragraphs currently being collected
+    char_count = 0            #how many characters we've collected so far.
 
-    for para in paragraphs:
-        buffer.append(para)
-        char_count += len(para)
-        if char_count >= _DOCX_PAGE_TARGET_CHARS:
+    for para in paragraphs:    #Take paragraphs one at a time.
+        buffer.append(para)     #Put the paragraph into the current pseudo-page.
+        char_count += len(para)     #Count how many characters we've collected.
+        if char_count >= _DOCX_PAGE_TARGET_CHARS:   #So when we reach approximately 1500 characters: Close this pseudo-page.
             pages.append(
                 {
                     "page_number": page_num,
                     "text": "\n\n".join(buffer),
                 }
             )
-            page_num += 1
+            page_num += 1  #Move to the next pseudo-page.
             buffer = []
-            char_count = 0
+            char_count = 0  #Reset the character count for the next pseudo-page.
 
-    if buffer:
+    if buffer:    #If there are any remaining paragraphs that didn't fit in the LAST pseudo-page:
         pages.append(
             {
                 "page_number": page_num,

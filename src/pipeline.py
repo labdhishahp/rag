@@ -31,12 +31,17 @@ def build_retriever_from_pages(
     chunk_overlap: int = DEFAULT_CHUNK_OVERLAP,
 ) -> Retriever:
     """Turn extracted pages into a searchable Retriever."""
-    chunks = chunk_pages(pages, chunk_size=chunk_size, chunk_overlap=chunk_overlap)
+    chunks = chunk_pages(
+        pages,
+        chunk_size=chunk_size,
+        chunk_overlap=chunk_overlap,
+    )
 
     if embedding_model is None:
         embedding_model = EmbeddingModel()
 
     texts = [chunk["text"] for chunk in chunks]
+
     try:
         embeddings = embedding_model.embed_texts(texts)
     except Exception as exc:
@@ -87,15 +92,22 @@ def index_document_from_upload(
     if not file_bytes:
         raise DocumentProcessingError("The uploaded file is empty.")
 
+    # ---------------------------------------------------------
+    # STEP 1: EXTRACT TEXT
+    # ---------------------------------------------------------
     step("Extracting text...")
+
     try:
         pages = load_document_from_bytes(file_bytes, filename)
+
     except ValueError as exc:
         raise DocumentProcessingError(str(exc)) from exc
+
     except fitz.FileDataError as exc:
         raise DocumentProcessingError(
             "Invalid PDF file. Please upload a valid PDF document."
         ) from exc
+
     except Exception as exc:
         raise DocumentProcessingError(
             "Failed to read the document. See terminal logs for details."
@@ -104,32 +116,113 @@ def index_document_from_upload(
     if embedding_model is None:
         embedding_model = EmbeddingModel()
 
+    # ---------------------------------------------------------
+    # STEP 2: CREATE CHUNKS
+    # ---------------------------------------------------------
+        # step("Creating chunks...")
+    # try:
+    #     chunks = chunk_pages(pages, chunk_size=chunk_size, chunk_overlap=chunk_overlap)
+    # except ValueError as exc:
+    #     raise DocumentProcessingError(str(exc)) from exc
+
+    # step("Generating embeddings...")
+    # texts = [chunk["text"] for chunk in chunks]
+    # try:
+    #     embeddings = embedding_model.embed_texts(texts)
+    # except Exception as exc:
+    #     raise DocumentProcessingError(
+    #         "Failed to generate embeddings. See terminal logs for details."
+    #     ) from exc
+    
+    
     step("Creating chunks...")
+
     try:
-        chunks = chunk_pages(pages, chunk_size=chunk_size, chunk_overlap=chunk_overlap)
+        chunks = chunk_pages(
+            pages,
+            chunk_size=chunk_size,
+            chunk_overlap=chunk_overlap,
+        )
+
+        # TEMPORARY DEBUGGING OUTPUT
+        # This lets us SEE exactly what the chunker produced.
+        print("\n" + "=" * 60)
+        print("CHUNKING RESULT")
+        print("=" * 60)
+
+        print("Number of pages:", len(pages))
+        print("Total chunks:", len(chunks))
+        print("Chunk size:", chunk_size)
+        print("Chunk overlap:", chunk_overlap)
+
+        for chunk in chunks:
+            print("\n" + "-" * 40)
+            print(f"CHUNK {chunk['chunk_id']}")
+            print("-" * 40)
+
+            print("Page:", chunk["page_number"])
+            print("Length:", len(chunk["text"]))
+
+            print("Text:")
+            print(chunk["text"])
+
+        print("\n" + "=" * 60)
+        print("END CHUNKING RESULT")
+        print("=" * 60 + "\n")
+
     except ValueError as exc:
         raise DocumentProcessingError(str(exc)) from exc
 
+    # ---------------------------------------------------------
+    # STEP 3: GENERATE EMBEDDINGS
+    # ---------------------------------------------------------
     step("Generating embeddings...")
+
     texts = [chunk["text"] for chunk in chunks]
+
     try:
         embeddings = embedding_model.embed_texts(texts)
+
     except Exception as exc:
         raise DocumentProcessingError(
             "Failed to generate embeddings. See terminal logs for details."
         ) from exc
 
+    # ---------------------------------------------------------
+    # STEP 4: BUILD VECTOR SEARCH INDEX
+    # ---------------------------------------------------------
     step("Building search index...")
+
     try:
-        store = VectorStore(dimension=embedding_model.dimension)
-        store.add(embeddings, chunks)
-        retriever = Retriever(embedding_model, store)
+        store = VectorStore(
+            dimension=embedding_model.dimension
+        )
+
+        store.add(
+            embeddings,
+            chunks,
+        )
+
+        retriever = Retriever(
+            embedding_model,
+            store,
+        )
+
     except Exception as exc:
         raise DocumentProcessingError(
             "Failed to build the search index. See terminal logs for details."
         ) from exc
 
-    metadata = _document_metadata(pages, retriever, embedding_model, filename)
+    # ---------------------------------------------------------
+    # STEP 5: CREATE DOCUMENT METADATA
+    # ---------------------------------------------------------
+    metadata = _document_metadata(
+        pages,
+        retriever,
+        embedding_model,
+        filename,
+    )
+
     return retriever, metadata
 
 
@@ -140,7 +233,9 @@ def build_retriever_from_pdf(
     chunk_overlap: int = DEFAULT_CHUNK_OVERLAP,
 ) -> Retriever:
     """Load a PDF from disk and build a Retriever (Phase 1 CLI)."""
+
     pages = load_pdf(pdf_path)
+
     return build_retriever_from_pages(
         pages,
         embedding_model=embedding_model,
@@ -157,6 +252,7 @@ def index_document_from_bytes(
     chunk_overlap: int = DEFAULT_CHUNK_OVERLAP,
 ) -> tuple[Retriever, dict]:
     """Backward-compatible alias for index_document_from_upload."""
+
     return index_document_from_upload(
         file_bytes,
         filename=filename,
@@ -174,6 +270,7 @@ def build_retriever_from_bytes(
     chunk_overlap: int = DEFAULT_CHUNK_OVERLAP,
 ) -> Retriever:
     """Load an uploaded file and build a Retriever (Phase 1 compatible)."""
+
     retriever, _ = index_document_from_upload(
         file_bytes,
         filename=filename,
@@ -181,4 +278,5 @@ def build_retriever_from_bytes(
         chunk_size=chunk_size,
         chunk_overlap=chunk_overlap,
     )
+
     return retriever
