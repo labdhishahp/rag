@@ -420,15 +420,21 @@ def _render_chunks_button() -> None:
     embeddings_ready = chunks_ready and embeddings is not None
 
     # TEMPORARY DIAGNOSTIC — remove after debugging
+    _embeddings_shape = (
+        str(embeddings.shape) if hasattr(embeddings, "shape") else "N/A"
+    )
     st.warning(
-        f"**Chunks button diagnostic**\n\n"
+        f"**Embeddings button diagnostic**\n\n"
         f"Retriever exists: {'YES' if st.session_state.retriever is not None else 'NO'}\n\n"
         f"doc_metadata exists: {'YES' if meta is not None else 'NO'}\n\n"
-        f"chunks exists: {'YES' if chunks is not None else 'NO'}\n\n"
-        f"chunks type: {type(chunks).__name__}\n\n"
+        f"chunks exists: {'YES' if chunks is not None else 'NO'}\n"
+        f"chunks type: {type(chunks).__name__}\n"
         f"chunks length: {len(chunks) if chunks is not None else 'N/A'}\n\n"
-        f"state/status: ui_state={st.session_state.ui_state}"
-        + (f", metadata status={meta.get('status')}" if meta else "")
+        f"embeddings exists: {'YES' if embeddings is not None else 'NO'}\n"
+        f"embeddings type: {type(embeddings).__name__}\n"
+        f"embeddings length: {len(embeddings) if embeddings is not None else 'N/A'}\n"
+        f"embeddings shape: {_embeddings_shape}\n\n"
+        f"state/status: {st.session_state.ui_state}"
     )
 
     with _chunks_btn_slot.container():
