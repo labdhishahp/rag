@@ -44,7 +44,7 @@ st.set_page_config(
     layout="wide",
 )
 
-_header_col, _chunks_col = st.columns([11, 1])
+_header_col, _chunks_col = st.columns([10, 2])
 with _header_col:
     st.title("RAG Document Chat")
     st.caption("Upload a document and ask questions about its contents.")
@@ -384,10 +384,40 @@ def _show_chunks_dialog() -> None:
             st.divider()
 
 
+@st.dialog("Document Embeddings")
+def _show_embeddings_dialog() -> None:
+    meta = st.session_state.doc_metadata
+    chunks = meta.get("chunks") if meta else None
+    embeddings = meta.get("embeddings") if meta else None
+    if not chunks or embeddings is None:
+        st.write("No document uploaded.")
+        return
+
+    for i, chunk in enumerate(chunks):
+        vec = embeddings[i]
+        st.markdown(f"**Embedding {i}**")
+        st.markdown(f"Chunk ID: {chunk['chunk_id']}")
+        st.markdown(f"Page: {chunk['page_number']}")
+        st.markdown("")
+        st.markdown("Original text:")
+        st.text(chunk["text"])
+        st.markdown("")
+        st.markdown("Embedding:")
+        st.text(str(vec))
+        st.markdown(f"Shape: {vec.shape}")
+        st.markdown(f"Dimension: {vec.shape[0]}")
+        st.markdown(f"Data type: {vec.dtype}")
+        st.markdown(f"First 10 values: {vec[:10]}")
+        if i < len(chunks) - 1:
+            st.divider()
+
+
 def _render_chunks_button() -> None:
     meta = st.session_state.doc_metadata
     chunks = meta.get("chunks") if meta else None
-    document_ready = st.session_state.retriever is not None and chunks
+    embeddings = meta.get("embeddings") if meta else None
+    chunks_ready = st.session_state.retriever is not None and chunks
+    embeddings_ready = chunks_ready and embeddings is not None
 
     # TEMPORARY DIAGNOSTIC — remove after debugging
     st.warning(
@@ -402,8 +432,15 @@ def _render_chunks_button() -> None:
     )
 
     with _chunks_btn_slot.container():
-        if st.button("Chunks", disabled=not document_ready, key="chunks_viewer_btn"):
-            _show_chunks_dialog()
+        btn_col1, btn_col2 = st.columns(2)
+        with btn_col1:
+            if st.button("Chunks", disabled=not chunks_ready, key="chunks_viewer_btn"):
+                _show_chunks_dialog()
+        with btn_col2:
+            if st.button(
+                "Embeddings", disabled=not embeddings_ready, key="embeddings_viewer_btn"
+            ):
+                _show_embeddings_dialog()
 
 
 def _render_chat_history() -> None:

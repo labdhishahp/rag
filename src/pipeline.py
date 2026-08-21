@@ -223,6 +223,7 @@ def index_document_from_upload(
         filename,
     )
     metadata["chunks"] = chunks
+    metadata["embeddings"] = embeddings
 
     return retriever, metadata
 

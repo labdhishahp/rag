@@ -39,7 +39,7 @@ class EmbeddingModel:
 
     def __init__(self, model_name: str = DEFAULT_MODEL):
         self.model = SentenceTransformer(model_name)
-        self.dimension = self.model.get_sentence_embedding_dimension()
+        self.dimension = self.model.get_sentence_embedding_dimension()  #It asks how many numbers will your embedding contain?"
 
     def embed_texts(self, texts: list[str]) -> np.ndarray:
         """
@@ -52,7 +52,7 @@ class EmbeddingModel:
             texts,
             convert_to_numpy=True,
             normalize_embeddings=True,
-            show_progress_bar=len(texts) > 10,
+            show_progress_bar=len(texts) > 10,  #progress bar means it will show a progress bar if the number of texts is greater than 10.
         )
         return vectors.astype(np.float32)
 
