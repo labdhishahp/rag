@@ -74,13 +74,21 @@ about than one that silently expands its own results.
 
 from dataclasses import dataclass, field
 
+from config import (
+    CONTEXT_BUDGET_CHARS,
+    EXPANSION_MARGIN,
+    NEIGHBOUR_WINDOW,
+    SIMILARITY_HARD_FLOOR,
+    SIMILARITY_SOFT_FLOOR,
+)
+
 # How many chunks to pull in on each side of a similarity hit.
 #
 # 1 is deliberate. Each chunk is already ~450 characters, so a window of 1
 # means one hit contributes ~1350 characters — the formula, plus what comes
 # immediately before and after it. A window of 2 doubles the cost for material
 # that is, by construction, less related to the question.
-DEFAULT_NEIGHBOUR_WINDOW = 1
+DEFAULT_NEIGHBOUR_WINDOW = NEIGHBOUR_WINDOW
 
 # Hard ceiling on the evidence block, in characters.
 #
@@ -88,26 +96,23 @@ DEFAULT_NEIGHBOUR_WINDOW = 1
 # 1484 chars. This is a deliberate ~3x increase: enough to carry a formula, its
 # variable list and a worked example, while staying far below the point where
 # "lost in the middle" degrades the answer.
-DEFAULT_CONTEXT_BUDGET_CHARS = 5000
+DEFAULT_CONTEXT_BUDGET_CHARS = CONTEXT_BUDGET_CHARS
 
-# Minimum similarity an entry chunk needs before we expand around it.
+# Which entries earn neighbours — two rules, both measured:
 #
-# Why this exists — a bug our own Step 3 test caught:
-#   Expansion was unconditional. Asked "what is the parental leave policy?" —
-#   which our test document cannot answer — similarity returned near-noise
-#   (0.136, 0.084), and expansion dutifully pulled in every neighbour of that
-#   noise: 7 of 8 chunks, 3066 characters, for a question with no answer.
+# 1. Absolute floor (SIMILARITY_HARD_FLOOR). Asked "what is the parental leave
+#    policy?" of a finance document, similarity returned near-noise (0.136), and
+#    unconditional expansion pulled in 7 of 8 chunks. Adjacency is only worth
+#    following from a foothold that is actually relevant.
 #
-#   That is worse than useless. A bigger pile of irrelevant text gives the model
-#   more opportunity to find something that merely LOOKS relevant, which is
-#   exactly how a confident wrong answer gets produced.
+# 2. Relative margin (EXPANSION_MARGIN). Asked about Compound Interest, the
+#    Simple Interest chunk scored 0.675 against a best of 0.830 — relevant
+#    enough to show, not relevant enough to bring its neighbours (the Present
+#    Value section) along. Neighbours of a distant second are usually noise.
 #
-# The principle: adjacency is only worth following from a foothold that is
-# actually relevant. Expanding around noise produces more noise.
-#
-# Entry chunks below this floor are still included (they are what similarity
-# found, and the LLM should judge them), but they do not earn neighbours.
-DEFAULT_EXPAND_MIN_SIMILARITY = 0.35
+# Entry chunks that fail either rule are still included (they are what
+# similarity found, and the LLM should judge them); they just do not expand.
+DEFAULT_EXPAND_MIN_SIMILARITY = SIMILARITY_HARD_FLOOR
 
 
 @dataclass
@@ -151,10 +156,39 @@ class ContextResult:
     duplicate_chars_removed: int = 0
     # Entry chunks that scored too low to be worth expanding around.
     not_expanded_chunk_ids: list[int] = field(default_factory=list)
+    best_similarity: float = 0.0
+    # "none"  best hit below the hard floor  -> nothing relevant was found
+    # "weak"  between the floors             -> answer, but flag low confidence
+    # "ok"    at or above the soft floor
+    evidence_level: str = "none"
 
     @property
     def has_evidence(self) -> bool:
-        return bool(self.passages)
+        return bool(self.passages) and self.evidence_level != "none"
+
+
+def evidence_level_for(best_similarity: float) -> str:
+    if best_similarity < SIMILARITY_HARD_FLOOR:
+        return "none"
+    if best_similarity < SIMILARITY_SOFT_FLOOR:
+        return "weak"
+    return "ok"
+
+
+def _same_scope(entry: dict, neighbour: dict) -> bool:
+    """
+    May this neighbour join this entry's passage?
+
+    A section heading is where the author changed subject. Expanding across it
+    brings in text about something else — measured on the finance document,
+    the Simple Interest entry pulled in Present Value. When the document has
+    section metadata, expansion stays inside the entry's section; when it does
+    not (no headings detected), the page is the fallback boundary.
+    """
+    entry_section = entry.get("section")
+    if entry_section is not None:
+        return neighbour.get("section") == entry_section
+    return neighbour.get("page_number") == entry.get("page_number")
 
 
 def build_context(
@@ -163,6 +197,7 @@ def build_context(
     neighbour_window: int = DEFAULT_NEIGHBOUR_WINDOW,
     budget_chars: int = DEFAULT_CONTEXT_BUDGET_CHARS,
     expand_min_similarity: float = DEFAULT_EXPAND_MIN_SIMILARITY,
+    expansion_margin: float | None = EXPANSION_MARGIN,
     debug: bool = True,
 ) -> ContextResult:
     """
@@ -173,14 +208,17 @@ def build_context(
     Output: ContextResult
 
     The five stages, in order:
-      1. SELECT   entry chunks, plus their neighbours within the window
-      2. BUDGET   drop the least valuable expansions until we fit
+      1. SELECT   entry chunks, plus same-section neighbours of the strong ones
+      2. BUDGET   drop the least valuable material until we fit
       3. ORDER    sort by document position — reading order, not score order
       4. MERGE    join adjacent chunks, removing the duplicated overlap
       5. FORMAT   render with real citations
     """
     if not entry_chunks:
         return ContextResult()
+
+    best_similarity = max(c.get("similarity", 0.0) for c in entry_chunks)
+    level = evidence_level_for(best_similarity)
 
     # -------------------------------------------------------------------
     # STAGE 1: SELECT — entry points, then walk outwards to neighbours
@@ -204,10 +242,14 @@ def build_context(
 
     for rank, chunk in enumerate(entry_chunks):
         document_id = chunk.get("document_id")
+        similarity = chunk.get("similarity", 0.0)
 
-        # Only follow adjacency from a foothold that is actually relevant.
-        # See DEFAULT_EXPAND_MIN_SIMILARITY for why.
-        if chunk.get("similarity", 0.0) < expand_min_similarity:
+        # Only follow adjacency from a foothold that is actually relevant:
+        # above the absolute floor (and, if a margin is configured, close to
+        # the best hit).
+        too_weak = similarity < expand_min_similarity
+        too_far = expansion_margin is not None and similarity < best_similarity - expansion_margin
+        if too_weak or too_far:
             not_expanded.append(chunk["chunk_id"])
             continue
 
@@ -226,6 +268,11 @@ def build_context(
                 # Never cross a document boundary. Two documents are not
                 # continuous text, so "adjacent" is meaningless across them.
                 if neighbour.get("document_id") != document_id:
+                    break
+
+                # Never cross a section boundary (or a page, when the document
+                # has no detectable sections). See _same_scope.
+                if not _same_scope(chunk, neighbour):
                     break
 
                 key = (document_id, neighbour_id)
@@ -249,13 +296,17 @@ def build_context(
                 current = neighbour
 
     # -------------------------------------------------------------------
-    # STAGE 2: BUDGET — trim expansions, never the similarity hits
+    # STAGE 2: BUDGET — expansions yield first, then the weakest entries
     # -------------------------------------------------------------------
-    # An entry chunk is why we are answering at all; dropping one would discard
-    # the actual match. Expansions are enrichment, so they yield first — worst
-    # priority (furthest from the best hit) goes first.
+    # The budget is a real ceiling. Expansions are enrichment, so they are
+    # dropped first (worst priority first). If the entries alone still exceed
+    # the budget — a large top_k on a long document — the lowest-ranked entries
+    # go next. The top-1 hit is always kept: it is why we are answering at all.
     dropped: list[int] = []
-    entries = [v for v in selected.values() if v["origin"] == "entry"]
+    entries = sorted(
+        (v for v in selected.values() if v["origin"] == "entry"),
+        key=lambda v: v["priority"],
+    )
     expansions = sorted(
         (v for v in selected.values() if v["origin"] == "expanded"),
         key=lambda v: v["priority"],
@@ -264,8 +315,12 @@ def build_context(
     def size(items) -> int:
         return sum(len(v["chunk"]["text"]) for v in items)
 
+    kept_entries = list(entries)
+    while len(kept_entries) > 1 and size(kept_entries) > budget_chars:
+        dropped.append(kept_entries.pop()["chunk"]["chunk_id"])
+
     kept_expansions: list[dict] = []
-    running = size(entries)
+    running = size(kept_entries)
     for expansion in expansions:
         cost = len(expansion["chunk"]["text"])
         if running + cost <= budget_chars:
@@ -274,7 +329,7 @@ def build_context(
         else:
             dropped.append(expansion["chunk"]["chunk_id"])
 
-    chosen = entries + kept_expansions
+    chosen = kept_entries + kept_expansions
 
     # -------------------------------------------------------------------
     # STAGE 3: ORDER — by position in the document, NOT by score
@@ -303,7 +358,7 @@ def build_context(
     result = ContextResult(
         passages=passages,
         formatted=formatted,
-        entry_chunk_ids=[v["chunk"]["chunk_id"] for v in entries],
+        entry_chunk_ids=[v["chunk"]["chunk_id"] for v in kept_entries],
         expanded_chunk_ids=sorted(
             v["chunk"]["chunk_id"] for v in kept_expansions
         ),
@@ -311,6 +366,8 @@ def build_context(
         total_chars=sum(len(p.text) for p in passages),
         duplicate_chars_removed=duplicate_chars,
         not_expanded_chunk_ids=sorted(not_expanded),
+        best_similarity=best_similarity,
+        evidence_level=level,
     )
 
     if debug:
@@ -451,7 +508,11 @@ def format_passages(passages: list[Passage]) -> str:
 
     blocks = []
     for number, passage in enumerate(passages, start=1):
-        blocks.append(f"[S{number}] {citation_for(passage)}\n{passage.text}")
+        # "(matched)" tells the model which passages similarity actually
+        # found, so salience is not lost when passages are in reading order
+        # rather than score order. Pure expansions are labelled as context.
+        tag = "(matched)" if passage.entry_chunk_ids else "(surrounding context)"
+        blocks.append(f"[S{number}] {citation_for(passage)} {tag}\n{passage.text}")
     return "\n\n".join(blocks)
 
 
@@ -495,4 +556,5 @@ def print_context_debug(result: ContextResult) -> None:
     print(
         f"\n  total context: {result.total_chars} chars"
         f" | duplicate overlap removed: {result.duplicate_chars_removed} chars"
+        f" | evidence: {result.evidence_level} (best {result.best_similarity:.3f})"
     )

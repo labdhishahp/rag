@@ -18,6 +18,7 @@ Similarity threshold (limitations):
   primary guard against inventing answers.
 """
 
+from config import DEFAULT_TOP_K, SIMILARITY_SOFT_FLOOR
 from context_builder import (
     DEFAULT_CONTEXT_BUDGET_CHARS,
     DEFAULT_NEIGHBOUR_WINDOW,
@@ -27,7 +28,8 @@ from context_builder import (
 from llm import LLMClient
 from retriever import Retriever
 
-DEFAULT_SIMILARITY_THRESHOLD = 0.35
+# Kept as a name for the Streamlit sidebar; the value lives in config.py.
+DEFAULT_SIMILARITY_THRESHOLD = SIMILARITY_SOFT_FLOOR
 
 
 class RAGSystem:
@@ -42,7 +44,7 @@ class RAGSystem:
         self,
         retriever: Retriever,
         llm: LLMClient,
-        top_k: int = 3,
+        top_k: int = DEFAULT_TOP_K,
         similarity_threshold: float = DEFAULT_SIMILARITY_THRESHOLD,
         embedding_dimension: int | None = None,
         neighbour_window: int = DEFAULT_NEIGHBOUR_WINDOW,
@@ -123,6 +125,7 @@ class RAGSystem:
             "dropped_chunk_ids": context.dropped_chunk_ids,
             "context_chars": context.total_chars,
             "duplicate_chars_removed": context.duplicate_chars_removed,
+            "evidence_level": context.evidence_level,
         }
 
 

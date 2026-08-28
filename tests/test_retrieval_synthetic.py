@@ -77,7 +77,8 @@ def test_merged_passages_are_contiguous_and_overlap_removed(formula_retriever, f
 
 def test_absent_information_does_not_expand(formula_retriever, formula_store, formula_chunks):
     entries = formula_retriever.retrieve("What is the parental leave policy?", top_k=3)
-    assert entries[0]["similarity"] < 0.35
+    from config import SIMILARITY_HARD_FLOOR
+    assert entries[0]["similarity"] < SIMILARITY_HARD_FLOOR
     ctx = build_context(entries, formula_store, debug=False)
     assert ctx.expanded_chunk_ids == []
     assert len(_covered(ctx)) < len(formula_chunks) / 2

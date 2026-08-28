@@ -58,6 +58,7 @@ What it deliberately does NOT do:
 from __future__ import annotations
 
 import re
+import unicodedata
 from collections import Counter
 from dataclasses import dataclass, field
 
@@ -144,7 +145,11 @@ def _join_wrapped_lines(lines: list[str]) -> str:
     """
     out = ""
     for line in lines:
-        line = " ".join(line.split())
+        # NFKC folds typographic ligatures into plain letters: "ﬁne-tuning" ->
+        # "fine-tuning", "classiﬁcation" -> "classification". Left alone, the
+        # ligature is a different Unicode character, so the embedding model
+        # sees an unknown token and exact-text matching silently fails.
+        line = " ".join(unicodedata.normalize("NFKC", line).split())
         if not line:
             continue
         if not out:
