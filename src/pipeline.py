@@ -5,6 +5,7 @@ Input:  file bytes + filename (PDF or DOCX)
 Output: Retriever ready to search (+ document metadata for the UI)
 """
 
+import hashlib
 from pathlib import Path
 from typing import Callable, Optional, Union
 
@@ -22,6 +23,21 @@ DEFAULT_CHUNK_OVERLAP = 50
 
 class DocumentProcessingError(Exception):
     """Raised when document ingestion or indexing fails."""
+
+
+def make_document_id(file_bytes: bytes) -> str:
+    """
+    A short, stable identifier for a document, derived from its CONTENT.
+
+    Why content and not the filename:
+      The same file renamed is still the same document and should keep its ID.
+      Two different files that happen to share a name must not collide. Hashing
+      the bytes gives us both properties for free.
+
+    12 hex characters is 48 bits — ample for the handful of documents this app
+    holds, and short enough to read in debug output.
+    """
+    return hashlib.sha256(file_bytes).hexdigest()[:12]
 
 
 def build_retriever_from_pages(
@@ -60,9 +76,12 @@ def _document_metadata(
     retriever: Retriever,
     embedding_model: EmbeddingModel,
     filename: str,
+    document_id: str | None = None,
 ) -> dict:
     return {
         "filename": filename,
+        "document_id": document_id,
+        "page_label": pages[0].get("page_label", "page") if pages else "page",
         "page_count": len(pages),
         "chunk_count": retriever.vector_store.index.ntotal,
         "embedding_dimension": embedding_model.dimension,
@@ -119,59 +138,32 @@ def index_document_from_upload(
     # ---------------------------------------------------------
     # STEP 2: CREATE CHUNKS
     # ---------------------------------------------------------
-        # step("Creating chunks...")
-    # try:
-    #     chunks = chunk_pages(pages, chunk_size=chunk_size, chunk_overlap=chunk_overlap)
-    # except ValueError as exc:
-    #     raise DocumentProcessingError(str(exc)) from exc
-
-    # step("Generating embeddings...")
-    # texts = [chunk["text"] for chunk in chunks]
-    # try:
-    #     embeddings = embedding_model.embed_texts(texts)
-    # except Exception as exc:
-    #     raise DocumentProcessingError(
-    #         "Failed to generate embeddings. See terminal logs for details."
-    #     ) from exc
-    
-    
     step("Creating chunks...")
+
+    document_id = make_document_id(file_bytes)
 
     try:
         chunks = chunk_pages(
             pages,
             chunk_size=chunk_size,
             chunk_overlap=chunk_overlap,
+            document_name=filename,
+            document_id=document_id,
         )
-
-        # TEMPORARY DEBUGGING OUTPUT
-        # This lets us SEE exactly what the chunker produced.
-        print("\n" + "=" * 60)
-        print("CHUNKING RESULT")
-        print("=" * 60)
-
-        print("Number of pages:", len(pages))
-        print("Total chunks:", len(chunks))
-        print("Chunk size:", chunk_size)
-        print("Chunk overlap:", chunk_overlap)
-
-        for chunk in chunks:
-            print("\n" + "-" * 40)
-            print(f"CHUNK {chunk['chunk_id']}")
-            print("-" * 40)
-
-            print("Page:", chunk["page_number"])
-            print("Length:", len(chunk["text"]))
-
-            print("Text:")
-            print(chunk["text"])
-
-        print("\n" + "=" * 60)
-        print("END CHUNKING RESULT")
-        print("=" * 60 + "\n")
-
     except ValueError as exc:
         raise DocumentProcessingError(str(exc)) from exc
+
+    # Compact pipeline visibility: one line per chunk, not the full text.
+    # For the full text of every chunk, use scripts/baseline_retrieval.py
+    # or the "Chunks" viewer in the Streamlit UI.
+    print("\n=== CHUNKING ===")
+    print(f"document={filename} id={document_id}")
+    print(f"pages={len(pages)} chunks={len(chunks)} "
+          f"size={chunk_size} overlap={chunk_overlap}")
+    for chunk in chunks:
+        preview = chunk["text"][:60].replace("\n", " ")
+        print(f"  chunk {chunk['chunk_id']:>3} | {chunk['page_label']} "
+              f"{chunk['page_number']:>2} | {len(chunk['text']):>4} chars | {preview}...")
 
     # ---------------------------------------------------------
     # STEP 3: GENERATE EMBEDDINGS
@@ -221,6 +213,7 @@ def index_document_from_upload(
         retriever,
         embedding_model,
         filename,
+        document_id=document_id,
     )
     metadata["chunks"] = chunks
     metadata["embeddings"] = embeddings

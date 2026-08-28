@@ -34,7 +34,18 @@ logger = logging.getLogger(__name__)
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent
 load_dotenv(_PROJECT_ROOT / ".env")
 
-DEFAULT_MODEL = "gemini-2.5-flash"
+# Pinned to an explicit version, not an alias like "gemini-flash-latest".
+# Reason: a moving alias would silently change answers between runs, which makes
+# it impossible to tell whether a retrieval change helped or the model changed.
+#
+# gemini-2.5-flash was retired by Google for new API keys (404 NOT_FOUND on
+# generateContent, even though it still appears in models.list()).
+#
+# gemini-3.6-flash works but its free tier allows only 20 requests PER DAY
+# (quotaId GenerateRequestsPerDayPerProjectPerModel-FreeTier), which a single
+# test session exhausts. Free-tier quota is per-model, so 3.5-flash has its own
+# separate budget and is the practical choice for this project.
+DEFAULT_MODEL = "gemini-3.5-flash"
 
 
 def _get_api_key() -> str:
@@ -65,16 +76,20 @@ class LLMClient(ABC):
     def answer_with_context(
         self,
         question: str,
-        chunks: list[dict],
+        context: str,
         low_confidence: bool = False,
     ) -> str:
         """
-        Build a grounded prompt from question + chunks, then generate an answer.
+        Build a grounded prompt from question + context, then generate an answer.
 
-        Input:  question, retrieved chunks, optional low-confidence flag
+        Input:  question, a formatted evidence block, optional low-confidence flag
         Output: answer string
+
+        The evidence block is produced by context_builder.py. This layer stays
+        deliberately ignorant of chunks, pages and similarity scores — it only
+        forwards text to a provider, which is what makes the provider swappable.
         """
-        prompt = build_rag_prompt(question, chunks, low_confidence=low_confidence)
+        prompt = build_rag_prompt(question, context, low_confidence=low_confidence)
         return self.generate(prompt)
 
 

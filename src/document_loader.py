@@ -13,6 +13,7 @@ Why keep page numbers?
 """
 
 import io
+import re
 from pathlib import Path
 from typing import Union
 
@@ -51,6 +52,10 @@ def load_pdf_from_bytes(pdf_bytes: bytes) -> list[dict]:   #this creates func th
             pages.append(
                 {
                     "page_number": page_index + 1,
+                    # A PDF page number is a real, verifiable location, so we
+                    # label it honestly as "page". See load_docx_from_bytes for
+                    # why DOCX cannot make the same claim.
+                    "page_label": "page",
                     "text": text,
                 }
             )
@@ -114,6 +119,11 @@ def load_docx_from_bytes(docx_bytes: bytes) -> list[dict]:
             pages.append(
                 {
                     "page_number": page_num,
+                    # NOT a real page. A .docx has no fixed pagination, so this
+                    # number is our own invention. Labelling it "section" keeps
+                    # citations honest — we must never tell the user "page 3"
+                    # when no such page exists in their file.
+                    "page_label": "section",
                     "text": "\n\n".join(buffer),
                 }
             )
@@ -125,6 +135,7 @@ def load_docx_from_bytes(docx_bytes: bytes) -> list[dict]:
         pages.append(
             {
                 "page_number": page_num,
+                "page_label": "section",
                 "text": "\n\n".join(buffer),
             }
         )
@@ -155,5 +166,148 @@ def load_document_from_bytes(file_bytes: bytes, filename: str) -> list[dict]:
 
 
 def clean_text(text: str) -> str:
-    """Collapse runs of whitespace before chunking."""
+    """
+    Collapse ALL whitespace, including newlines, into single spaces.
+
+    Kept for the Phase 1 CLI and for comparing against the old chunker.
+    New code should prefer clean_text_structured(), which keeps the line
+    structure that headings, formulas and list items depend on.
+    """
     return " ".join(text.split())
+
+
+# --------------------------------------------------------------------------
+# Structure-preserving cleaning
+# --------------------------------------------------------------------------
+#
+# The problem clean_text() causes:
+#   PyMuPDF's "text" extraction emits a newline at every VISUAL line break.
+#   A wrapped paragraph therefore arrives as several lines, and a heading, a
+#   standalone formula, and each item of a list also arrive as their own lines.
+#   clean_text() flattens all of them into one long line, so by the time the
+#   chunker runs there is no way to tell a heading from mid-sentence text.
+#
+# What we cannot rely on:
+#   Blank lines. Many PDFs (including our own test document) contain none at
+#   all — verified by inspecting the raw extraction. So paragraph detection
+#   cannot be based on blank lines.
+#
+# The signal we use instead — three questions per line:
+#   1. Is the line FULL?  A wrapped line runs close to the page's widest line.
+#      A line much shorter than that ended early on purpose.
+#   2. Does it end with sentence-terminal punctuation?  Then it is complete.
+#   3. Is it (or the next line) a list item?  List items own their own line.
+#
+# If a line is full, unpunctuated, and not part of a list, the newline after it
+# is a mere wrap and we join it to the next line with a space. Otherwise the
+# newline is meaningful and we keep it.
+
+# A list item: "P = the principal", "1. First", "- bullet", "iv) point".
+_LIST_ITEM = re.compile(
+    r"^\s*(?:[-*•·]|\(?\d{1,3}[.)\]]|\(?[A-Za-z][.)\]]|[A-Za-z]\s*=)\s"
+)
+
+_SENTENCE_END = (".", "!", "?", ":", ";")
+
+# A line shorter than this fraction of the page's widest line ended on purpose.
+_FULL_LINE_RATIO = 0.75
+
+# Below this width we cannot infer a wrap column, so keep every newline.
+_MIN_WRAP_WIDTH = 40
+
+# A heading is short, unpunctuated, and few words.
+_HEADING_MAX_CHARS = 60
+_HEADING_MAX_WORDS = 8
+
+
+def _is_list_item(line: str) -> bool:
+    return bool(_LIST_ITEM.match(line))
+
+
+# A heading is prose. This much of it must be letters or spaces.
+# Rejects formulas and symbol-heavy lines that pass every other test.
+_HEADING_MIN_ALPHA_RATIO = 0.80
+
+
+def is_heading(line: str) -> bool:
+    """
+    Does this line look like a section heading?
+
+    Conservative on purpose. A false heading attaches a wrong section label to
+    every chunk beneath it, which is worse than having no label at all — a
+    citation that looks verifiable and is not.
+
+    Why the equals-sign and alpha-ratio rules exist:
+      A standalone formula line looks exactly like a heading by every other
+      measure: short, no terminal punctuation, few words, starts with a letter.
+      Our own test caught "PV = FV / (1 + r)^n" being labelled a section.
+      The _is_list_item() check happened to reject "A = P(1 + r/n)^(nt)" (single
+      letter, then '='), but not the two-letter "PV =" — an inconsistency that
+      only a content-based rule fixes properly.
+    """
+    stripped = line.strip()
+    if not stripped or len(stripped) > _HEADING_MAX_CHARS:
+        return False
+    if stripped.endswith(_SENTENCE_END):
+        return False
+    if _is_list_item(stripped):
+        return False
+    if len(stripped.split()) > _HEADING_MAX_WORDS:
+        return False
+    # Headings do not assign or compute anything.
+    if "=" in stripped:
+        return False
+    # Headings are mostly words, not symbols, digits or operators.
+    alpha_like = sum(1 for ch in stripped if ch.isalpha() or ch.isspace())
+    if alpha_like / len(stripped) < _HEADING_MIN_ALPHA_RATIO:
+        return False
+    # Headings start with a letter or digit, not punctuation or a symbol.
+    return stripped[0].isalnum()
+
+
+def clean_text_structured(text: str) -> str:
+    """
+    Normalise whitespace while KEEPING structurally meaningful line breaks.
+
+    Input:  raw page text from PyMuPDF (newline at every visual line break)
+    Output: text where '\\n' appears only at real structural boundaries
+
+    Guarantees:
+      - no leading/trailing whitespace on any line
+      - no runs of spaces or tabs inside a line
+      - no blank lines
+      - wrapped lines are rejoined with a single space
+    """
+    # Normalise line endings, squeeze intra-line whitespace, drop blank lines.
+    lines = [" ".join(raw.split()) for raw in text.replace("\r\n", "\n").split("\n")]
+    lines = [line for line in lines if line]
+
+    if not lines:
+        return ""
+
+    widest = max(len(line) for line in lines)
+
+    # Very narrow content (a title page, a short list): no wrap column to infer.
+    if widest < _MIN_WRAP_WIDTH:
+        return "\n".join(lines)
+
+    full_line_threshold = widest * _FULL_LINE_RATIO
+
+    out: list[str] = [lines[0]]
+    for index in range(1, len(lines)):
+        previous, current = lines[index - 1], lines[index]
+
+        wrapped = (
+            len(previous) >= full_line_threshold      # previous line ran to the margin
+            and not previous.endswith(_SENTENCE_END)  # ...and was left unfinished
+            and not _is_list_item(previous)           # list items end their own line
+            and not _is_list_item(current)            # a new item starts a new line
+            and not is_heading(current)               # a heading starts a new line
+        )
+
+        if wrapped:
+            out[-1] = f"{out[-1]} {current}"
+        else:
+            out.append(current)
+
+    return "\n".join(out)

@@ -33,17 +33,22 @@ def format_context(chunks: list[dict]) -> str:
 
 def build_rag_prompt(
     question: str,
-    chunks: list[dict],
+    context: str,
     low_confidence: bool = False,
 ) -> str:
     """
     Build the full prompt for the LLM.
 
-    Input:  user question + retrieved chunks (+ optional low-confidence flag)
+    Input:  user question + a formatted context block (+ low-confidence flag)
     Output: single string prompt
-    """
-    context = format_context(chunks)
 
+    Why this takes a STRING and not chunks any more:
+      Assembling evidence became a real job of its own in Step 3 — expanding to
+      neighbouring chunks, merging overlaps, enforcing a budget, ordering by
+      position in the document. That work lives in context_builder.py. This
+      module's only remaining job is wording the instructions, so it should not
+      also need to know what a chunk is.
+    """
     confidence_note = ""
     if low_confidence:
         confidence_note = (
