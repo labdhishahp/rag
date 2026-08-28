@@ -67,6 +67,37 @@ def old_chunk_pages(
     return chunks
 
 
+def old_build_rag_prompt(question: str, context: str, low_confidence: bool = False) -> str:
+    """
+    The pre-Phase-3 prompt, verbatim. Its unconditional rule 4 ("directly and
+    concisely") is why a worked example that WAS in the context never reached
+    the answer; rule 5 is why citations were impossible.
+    """
+    confidence_note = ""
+    if low_confidence:
+        confidence_note = (
+            "\nIMPORTANT: The retrieved passages may NOT be relevant to this question "
+            "(similarity scores were low). If the context does not contain the answer, "
+            "you MUST say the information is not available in the document.\n"
+        )
+    return f"""You are a document Q&A assistant. Answer the user's question using ONLY the document context below.
+
+Rules:
+1. Use ONLY facts from the DOCUMENT CONTEXT. Do not use outside knowledge.
+2. If the answer is not in the DOCUMENT CONTEXT, say clearly: "This information is not available in the document."
+3. Do not invent or guess numbers, names, dates, or facts.
+4. Answer the question directly and concisely.
+5. Do not mention "the context" or "the document" unless explaining missing information.
+{confidence_note}
+DOCUMENT CONTEXT:
+{context}
+
+USER QUESTION:
+{question}
+
+ANSWER:"""
+
+
 def old_format_context(chunks: list[dict]) -> str:
     """
     The pre-Step-3 evidence block.

@@ -36,7 +36,7 @@ from chunker import chunk_pages  # noqa: E402
 from context_builder import build_context  # noqa: E402
 from document_loader import load_pdf  # noqa: E402
 from embeddings import EmbeddingModel  # noqa: E402
-from legacy_stage0 import old_chunk_pages, old_format_context  # noqa: E402
+from legacy_stage0 import old_build_rag_prompt, old_chunk_pages, old_format_context  # noqa: E402
 from llm import LLMError, create_llm  # noqa: E402
 from pipeline import make_document_id  # noqa: E402
 from prompt_builder import build_rag_prompt  # noqa: E402
@@ -138,7 +138,7 @@ def run_old(retriever, llm, question):
     best = chunks[0]["similarity"] if chunks else 0.0
     low_conf = best < DEFAULT_SIMILARITY_THRESHOLD
     context = old_format_context(chunks)
-    prompt = build_rag_prompt(question, context, low_confidence=low_conf)
+    prompt = old_build_rag_prompt(question, context, low_confidence=low_conf)
     answer = paced_generate(llm, prompt)
     return {
         "chunk_ids": [c["chunk_id"] for c in chunks],

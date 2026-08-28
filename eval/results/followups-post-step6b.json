@@ -1,0 +1,133 @@
+{
+  "rows": [
+    {
+      "id": "fu01",
+      "dependent": true,
+      "detected": true,
+      "raw_hit": true,
+      "aug_hit": true,
+      "retrieval_query": "What is the compound interest formula? Explain it in more detail."
+    },
+    {
+      "id": "fu02",
+      "dependent": true,
+      "detected": true,
+      "raw_hit": true,
+      "aug_hit": true,
+      "retrieval_query": "What is the compound interest formula? Can you give me an example?"
+    },
+    {
+      "id": "fu03",
+      "dependent": true,
+      "detected": true,
+      "raw_hit": true,
+      "aug_hit": true,
+      "retrieval_query": "What is the compound interest formula? What do the variables mean?"
+    },
+    {
+      "id": "fu04",
+      "dependent": true,
+      "detected": true,
+      "raw_hit": true,
+      "aug_hit": true,
+      "retrieval_query": "What is the present value formula? Why is that necessary?"
+    },
+    {
+      "id": "fu05",
+      "dependent": true,
+      "detected": true,
+      "raw_hit": true,
+      "aug_hit": true,
+      "retrieval_query": "What is simple interest? How does it compare with compound interest?"
+    },
+    {
+      "id": "fu06",
+      "dependent": false,
+      "detected": false,
+      "raw_hit": true,
+      "aug_hit": true,
+      "retrieval_query": "What is the present value formula?"
+    },
+    {
+      "id": "fu07",
+      "dependent": true,
+      "detected": true,
+      "raw_hit": true,
+      "aug_hit": true,
+      "retrieval_query": "What is diversification? What can't it remove?"
+    },
+    {
+      "id": "fu08",
+      "dependent": true,
+      "detected": true,
+      "raw_hit": false,
+      "aug_hit": true,
+      "retrieval_query": "Who is the CEO of Acme? When did she join?"
+    },
+    {
+      "id": "fu09",
+      "dependent": true,
+      "detected": true,
+      "raw_hit": true,
+      "aug_hit": true,
+      "retrieval_query": "What was Acme's revenue in 2024? And in 2023?"
+    },
+    {
+      "id": "fu10",
+      "dependent": true,
+      "detected": true,
+      "raw_hit": true,
+      "aug_hit": true,
+      "retrieval_query": "What products does Acme sell? How are they sold?"
+    },
+    {
+      "id": "fu11",
+      "dependent": false,
+      "detected": false,
+      "raw_hit": true,
+      "aug_hit": true,
+      "retrieval_query": "How many employees does Acme have?"
+    },
+    {
+      "id": "fu12",
+      "dependent": true,
+      "detected": true,
+      "raw_hit": false,
+      "aug_hit": true,
+      "retrieval_query": "What are the tenets of zero trust? The following is an attempt to define ZT and ZTA in terms of basic tenets that should be involved rather than what is excluded. These tenets are the ideal goal, though it must be acknowledged that not all tenets may be fully implemented in their purest form for a given strategy. A zero trust Explain the first one in more detail."
+    },
+    {
+      "id": "fu13",
+      "dependent": true,
+      "detected": true,
+      "raw_hit": true,
+      "aug_hit": true,
+      "retrieval_query": "What is a policy enforcement point? What about the policy engine?"
+    },
+    {
+      "id": "fu14",
+      "dependent": true,
+      "detected": true,
+      "raw_hit": true,
+      "aug_hit": true,
+      "retrieval_query": "What is Naive RAG? What are its main drawbacks?"
+    },
+    {
+      "id": "fu15",
+      "dependent": false,
+      "detected": false,
+      "raw_hit": true,
+      "aug_hit": true,
+      "retrieval_query": "What is RAG-Fusion?"
+    }
+  ],
+  "summary": {
+    "n_dependent": 12,
+    "n_standalone": 3,
+    "detection_accuracy": 1.0,
+    "dependent_gold_in_context_raw": 0.8333333333333334,
+    "dependent_gold_in_context_augmented": 1.0,
+    "standalone_false_augmentation": 0.0,
+    "standalone_gold_in_context": 1.0
+  }
+}

@@ -1,5 +1,5 @@
 """
-Full RAG orchestration: retrieve → expand → build context → LLM → answer + sources.
+Full RAG orchestration: understand → retrieve → expand → gate → prompt → LLM → answer + sources.
 
 Why retrieval quality matters:
   RAG can only answer from what retrieval returns. Wrong chunks → wrong or
@@ -7,18 +7,26 @@ Why retrieval quality matters:
 
 Why retrieval alone is not enough (Step 3):
   Similarity finds the passage that RESEMBLES the question. It does not find the
-  passages needed to ANSWER it. A formula resembles "what is the formula?"; the
-  list defining its symbols does not resemble anything a user would type. So we
-  use similarity to find an entry point, then adjacency to complete the thought.
-  See context_builder.py for the full reasoning and the tradeoff.
+  passages needed to ANSWER it. So we use similarity to find an entry point, then
+  adjacency (within the same section) to complete the thought. See context_builder.py.
 
-Similarity threshold (limitations):
-  We use a threshold as a *hint* that retrieval may be weak — NOT as proof that
-  an answer does or does not exist in the document. The LLM prompt is the
-  primary guard against inventing answers.
+Why the request is read first (Phase 3):
+  "What is the formula?" and "Explain the formula in detail" need DIFFERENT
+  evidence, not just different wording. Depth sets the retrieval config before a
+  single vector is compared. See query_understanding.py.
+
+Why the evidence gate is deterministic (Phase 3):
+  When the best hit is below the hard floor, retrieval found nothing relevant.
+  Sending near-noise to the LLM with a stern note relies on the model obeying;
+  declining in code costs no API call and behaves the same every time. The
+  in-prompt refusal rule remains as the second line of defence for the cases
+  no similarity threshold can catch (see config.py on the a05 hard negative).
 """
 
+import re
+
 from config import DEFAULT_TOP_K, SIMILARITY_SOFT_FLOOR
+from conversation import Conversation
 from context_builder import (
     DEFAULT_CONTEXT_BUDGET_CHARS,
     DEFAULT_NEIGHBOUR_WINDOW,
@@ -26,15 +34,19 @@ from context_builder import (
     citation_for,
 )
 from llm import LLMClient
+from prompt_builder import REFUSAL_TEXT, build_rag_prompt
+from query_understanding import retrieval_config_for, understand
 from retriever import Retriever
 
 # Kept as a name for the Streamlit sidebar; the value lives in config.py.
 DEFAULT_SIMILARITY_THRESHOLD = SIMILARITY_SOFT_FLOOR
 
+_CITATION = re.compile(r"\[S(\d{1,2})\]")
+
 
 class RAGSystem:
     """
-    Connects retrieval, context building, and LLM generation.
+    Connects query understanding, retrieval, context building, and generation.
 
     Input:  user question
     Output: answer, sources, retrieved chunks, expansion detail, confidence
@@ -44,81 +56,161 @@ class RAGSystem:
         self,
         retriever: Retriever,
         llm: LLMClient,
-        top_k: int = DEFAULT_TOP_K,
+        top_k: int | None = None,
         similarity_threshold: float = DEFAULT_SIMILARITY_THRESHOLD,
         embedding_dimension: int | None = None,
-        neighbour_window: int = DEFAULT_NEIGHBOUR_WINDOW,
-        context_budget_chars: int = DEFAULT_CONTEXT_BUDGET_CHARS,
+        neighbour_window: int | None = None,
+        context_budget_chars: int | None = None,
         debug: bool = True,
     ):
         self.retriever = retriever
         self.llm = llm
+        # None means "let the request decide" (query_understanding); a value
+        # pins it (the Streamlit sidebar, experiments).
         self.top_k = top_k
         self.similarity_threshold = similarity_threshold
         self.embedding_dimension = (
             embedding_dimension or retriever.embedding_model.dimension
         )
+        # None means "let the request decide" (query_understanding). A value
+        # pins it — useful for experiments and for the CLI.
         self.neighbour_window = neighbour_window
         self.context_budget_chars = context_budget_chars
         self.debug = debug
 
-    def answer(self, question: str) -> dict:
+    def answer(self, question: str, conversation: Conversation | None = None) -> dict:
+        """
+        Answer one user message.
+
+        conversation — optional. When given, follow-up messages ("explain it
+        more") are resolved against it for RETRIEVAL, and the recent turns are
+        shown to the model for reference resolution. The conversation is NOT
+        updated here; the caller records the turn (see record_turn), so a
+        failed call never leaves a half-written history.
+        """
         question = question.strip()
         if not question:
             raise ValueError("Question cannot be empty.")
 
+        # Step 0: Read the request.
+        understanding = understand(question)
+        config = retrieval_config_for(understanding)
+        top_k = self.top_k if self.top_k is not None else config["top_k"]
+        window = self.neighbour_window if self.neighbour_window is not None else config["neighbour_window"]
+        budget = self.context_budget_chars if self.context_budget_chars is not None else config["budget_chars"]
+
+        # Step 0b: Decide what retrieval should actually search for.
+        # A standalone question searches for itself. A follow-up searches for
+        # itself PLUS the question it follows — deterministically, no LLM.
+        follow_up = bool(conversation) and not conversation.is_empty and understanding.needs_context
+        retrieval_query = (
+            conversation.retrieval_query_for(question, needs_context=True)
+            if follow_up
+            else question
+        )
+        conversation_text = conversation.format_for_prompt() if (conversation and not conversation.is_empty) else None
+
         if self.debug:
             print("\n=== QUESTION ===")
             print(f"  {question}")
+            print(f"  depth={understanding.describe()}  ->  top_k={top_k} neighbour_window={window} budget={budget}")
+            if follow_up:
+                print("\n=== REWRITTEN QUERY (retrieval only) ===")
+                print(f"  {retrieval_query}")
 
         # Step 1: Retrieve entry-point chunks by pure similarity.
-        chunks = self.retriever.retrieve(question, top_k=self.top_k)
+        chunks = self.retriever.retrieve(retrieval_query, top_k=top_k)
+        if follow_up:
+            # Also retrieve with the raw message and keep its best hits. A poor
+            # augmentation must never hide a match the bare message would have
+            # found ("And in 2023?" matches the 2023 chunk on its own; glued to
+            # the 2024 question it drifts to 2024).
+            raw_hits = self.retriever.retrieve(question, top_k=top_k)
+            chunks = _merge_hits(chunks, raw_hits, keep_secondary=2)
         best_similarity = chunks[0]["similarity"] if chunks else 0.0
         low_confidence = best_similarity < self.similarity_threshold
 
-        # Step 2: Expand to neighbours, merge overlaps, enforce the budget.
+        # Step 2: Expand to same-section neighbours, merge, enforce the budget.
         context = build_context(
             chunks,
             self.retriever.vector_store,
-            neighbour_window=self.neighbour_window,
-            budget_chars=self.context_budget_chars,
+            neighbour_window=window,
+            budget_chars=budget,
             debug=self.debug,
         )
 
-        # Step 3: Generate the answer from the assembled evidence.
+        # Step 3: Evidence gate — nothing relevant found, so do not ask the LLM.
+        if context.evidence_level == "none":
+            if self.debug:
+                print("\n=== EVIDENCE GATE === best similarity below hard floor; declining without an LLM call")
+            return self._result(
+                question, understanding, REFUSAL_TEXT, chunks, context,
+                best_similarity, low_confidence, llm_called=False, cited=[],
+                retrieval_query=retrieval_query,
+            )
+
+        # Step 4: Generate from the assembled evidence (+ conversation for reference resolution).
         answer = self.llm.answer_with_context(
-            question, context.formatted, low_confidence=low_confidence
+            question,
+            context.formatted,
+            low_confidence=low_confidence,
+            depth=understanding.depth,
+            wants_example=understanding.wants_example,
+            conversation=conversation_text,
         )
 
-        # Step 4: Sources come from chunk metadata, never from the LLM.
-        #
-        # Note these are drawn from the FULL context, not just the similarity
-        # hits: an expanded neighbour that supplied the variable definitions
-        # genuinely contributed to the answer, so citing it is honest and
-        # omitting it would not be.
-        source_pages = extract_source_pages(context)
-        source_citations = [citation_for(p) for p in context.passages]
+        # Step 5: Verify citations against the labels that actually exist.
+        answer, cited = _check_citations(answer, len(context.passages))
 
+        result = self._result(
+            question, understanding, answer, chunks, context,
+            best_similarity, low_confidence, llm_called=True, cited=cited,
+            retrieval_query=retrieval_query,
+        )
         if self.debug:
             print("\n=== SOURCES ===")
-            for citation in source_citations:
-                print(f"  {citation}")
+            for i, citation in enumerate(result["source_citations"], start=1):
+                used = "cited" if i in cited else "     "
+                print(f"  [S{i}] {used}  {citation}")
             print()
+        return result
 
+    @staticmethod
+    def record_turn(conversation: Conversation, result: dict) -> None:
+        """Append the user message and the answer (with its evidence) to the conversation."""
+        conversation.add_user(result["question"])
+        conversation.add_assistant(
+            result["answer"],
+            retrieved_chunk_ids=[cid for p in result["context"].passages for cid in p.chunk_ids],
+            sources=result["source_citations"],
+            retrieval_query=result["retrieval_query"],
+        )
+
+    def _result(self, question, understanding, answer, chunks, context,
+                best_similarity, low_confidence, llm_called, cited,
+                retrieval_query=None) -> dict:
+        source_citations = [citation_for(p) for p in context.passages]
         return {
             "question": question,
+            "retrieval_query": retrieval_query or question,
+            "was_follow_up": (retrieval_query or question) != question,
             "answer": answer,
-            "sources": source_pages,
+            "depth": understanding.depth,
+            "understanding": understanding,
+            "sources": extract_source_pages(context),
             "source_citations": source_citations,
+            # Passages the model actually cited, 1-based, in label order.
+            "cited_sources": [source_citations[i - 1] for i in cited if 0 < i <= len(source_citations)],
+            "cited_labels": cited,
             # Entry-point similarity hits. Kept under the original key so the
             # Streamlit UI keeps working unchanged.
             "chunks": chunks,
             "best_similarity": best_similarity,
             "low_confidence": low_confidence,
-            "top_k": self.top_k,
+            "top_k": len(chunks),
+            "llm_model": getattr(self.llm, "active_model", None),
             "embedding_dimension": self.embedding_dimension,
             "num_retrieved_chunks": len(chunks),
-            # Step 3 additions — what expansion actually did.
             "context": context,
             "entry_chunk_ids": context.entry_chunk_ids,
             "expanded_chunk_ids": context.expanded_chunk_ids,
@@ -126,7 +218,58 @@ class RAGSystem:
             "context_chars": context.total_chars,
             "duplicate_chars_removed": context.duplicate_chars_removed,
             "evidence_level": context.evidence_level,
+            "llm_called": llm_called,
+            "refused": answer.strip().startswith(REFUSAL_TEXT),
         }
+
+
+def _merge_hits(primary: list[dict], secondary: list[dict], keep_secondary: int = 2) -> list[dict]:
+    """
+    All primary hits plus the best `keep_secondary` secondary hits not already
+    present, ordered by similarity.
+
+    Measured reason for GUARANTEEING secondary hits rather than pooling and
+    truncating: the raw message's hits usually score lower than the augmented
+    query's (vaguer text), so a pooled top-k silently dropped exactly the hits
+    the union existed to protect. Two dependent follow-ups regressed until the
+    raw hits were kept unconditionally.
+    """
+    seen = {(h.get("document_id"), h["chunk_id"]) for h in primary}
+    extra = []
+    for hit in secondary:
+        key = (hit.get("document_id"), hit["chunk_id"])
+        if key not in seen:
+            seen.add(key)
+            extra.append(hit)
+        if len(extra) >= keep_secondary:
+            break
+    merged = sorted(primary + extra, key=lambda h: h["similarity"], reverse=True)
+    for rank, hit in enumerate(merged, start=1):
+        hit["rank"] = rank
+    return merged
+
+
+def _check_citations(answer: str, n_passages: int) -> tuple[str, list[int]]:
+    """
+    Keep citations that point at real passages; strip the ones that do not.
+
+    A model can emit "[S7]" when only four passages exist. Leaving that in
+    would show the user a source that does not exist — the one thing a citation
+    must never do. Returns the cleaned answer and the sorted list of valid
+    labels actually used.
+    """
+    used: set[int] = set()
+
+    def keep_or_drop(match: re.Match) -> str:
+        n = int(match.group(1))
+        if 1 <= n <= n_passages:
+            used.add(n)
+            return match.group(0)
+        return ""
+
+    cleaned = _CITATION.sub(keep_or_drop, answer)
+    cleaned = re.sub(r" {2,}", " ", cleaned)
+    return cleaned.strip(), sorted(used)
 
 
 def extract_source_pages(context) -> list[int]:

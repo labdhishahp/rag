@@ -417,18 +417,33 @@ def _mark_headings(page: LayoutPage, body_size: float, doc_page_counts: Counter)
         # genuine paragraph is never that short — where the same rule applied
         # to raw lines produced hundreds of false headings.
         words = block.text.split()
-        capitalised = sum(1 for w in words if w[:1].isupper())
+        # Judge capitalisation on alphabetic words only: "Financial Highlights
+        # — 2024" is a title even though the dash and the year are not capitals.
+        alpha_words = [w for w in words if any(ch.isalpha() for ch in w)]
+        capitalised = sum(1 for w in alpha_words if w[:1].isupper())
         plain_title = (
             block.line_count == 1
             and 2 <= len(words) <= 6
-            and capitalised / len(words) >= 0.6
+            and alpha_words
+            and capitalised / len(alpha_words) >= 0.6
             and "," not in block.text
             and not block.text.rstrip().endswith((".", ",", ";", ":", "?", "!", "-"))
         )
         # A lone all-caps word of 6+ letters ("REFERENCES", "ABSTRACT",
         # "APPENDIX") is a section heading in small-caps journal styles.
         allcaps_word = len(words) == 1 and bool(_ALLCAPS_WORD.match(words[0]))
-        if larger or block.bold or numbered or plain_title or allcaps_word:
+        # A lone Title-case word of 6+ letters on its own line, unique in the
+        # document ("Sustainability", "Introduction"). Table cells are excluded
+        # by the uniqueness checks above and the table-run collapse.
+        single_title = (
+            len(words) == 1
+            and block.line_count == 1
+            and words[0].isalpha()
+            and len(words[0]) >= 6
+            and words[0][0].isupper()
+            and words[0][1:].islower()
+        )
+        if larger or block.bold or numbered or plain_title or allcaps_word or single_title:
             block.is_heading = True
 
 
