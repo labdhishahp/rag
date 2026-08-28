@@ -22,12 +22,8 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT / "src"))
 
-from chunker import chunk_pages  # noqa: E402
-from document_loader import (  # noqa: E402
-    clean_text,
-    clean_text_structured,
-    load_pdf,
-)
+from chunker import chunk_pages, page_text_for_chunking  # noqa: E402
+from document_loader import clean_text, load_pdf, load_pdf_raw_text  # noqa: E402
 
 PDF_PATH = PROJECT_ROOT / "data" / "formula_sample.pdf"
 CHUNK_SIZE = 500
@@ -149,11 +145,13 @@ def main() -> None:
     print("#" * 72)
 
     pages = load_pdf(PDF_PATH)
+    # The OLD pipeline also used the old, layout-blind extraction.
+    raw_pages = load_pdf_raw_text(PDF_PATH.read_bytes())
 
-    old_sources = {p["page_number"]: clean_text(p["text"]) for p in pages}
-    new_sources = {p["page_number"]: clean_text_structured(p["text"]) for p in pages}
+    old_sources = {p["page_number"]: clean_text(p["text"]) for p in raw_pages}
+    new_sources = {p["page_number"]: page_text_for_chunking(p) for p in pages}
 
-    old = old_chunk_pages(pages, CHUNK_SIZE, CHUNK_OVERLAP)
+    old = old_chunk_pages(raw_pages, CHUNK_SIZE, CHUNK_OVERLAP)
     new = chunk_pages(
         pages,
         chunk_size=CHUNK_SIZE,

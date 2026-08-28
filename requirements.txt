@@ -6,3 +6,6 @@ numpy>=1.26.0
 streamlit>=1.28.0
 google-genai>=1.0.0
 python-dotenv>=1.0.0
+
+# Testing
+pytest>=8.0

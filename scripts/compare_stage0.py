@@ -97,7 +97,11 @@ def paced_generate(llm, prompt: str, attempts: int = 4) -> str:
 
 
 def build_old(pages, model):
-    chunks = old_chunk_pages(pages, CHUNK_SIZE, CHUNK_OVERLAP)
+    # The Stage 0 pipeline also used the old layout-blind text extraction.
+    from document_loader import load_pdf_raw_text
+
+    raw_pages = load_pdf_raw_text(PDF_PATH.read_bytes())
+    chunks = old_chunk_pages(raw_pages, CHUNK_SIZE, CHUNK_OVERLAP)
     embeddings = model.embed_texts([c["text"] for c in chunks])
     store = VectorStore(dimension=model.dimension)
     store.add(embeddings, chunks)

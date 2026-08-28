@@ -110,11 +110,11 @@ def main() -> None:
     offsets_ok = True
     offset_detail = ""
     for page in pages:
-        # Step 2 moved chunking onto structure-preserving cleaned text, so
-        # offsets are into THAT coordinate space, not the flattened one.
-        from document_loader import clean_text_structured
+        # Offsets are into the exact string the chunker sliced. Always
+        # reconstruct it through page_text_for_chunking, never a cleaner.
+        from chunker import page_text_for_chunking
 
-        page_text = clean_text_structured(page["text"])
+        page_text = page_text_for_chunking(page)
         for c in chunks:
             if c["page_number"] != page["page_number"]:
                 continue
@@ -161,7 +161,7 @@ def main() -> None:
         check(
             "page_label is honest for a PDF",
             all(c["page_label"] == "page" for c in chunks),
-            "'page' (a real PDF page); DOCX would say 'section'",
+            "'page' (a real PDF page); DOCX would say 'part'",
         )
     )
 

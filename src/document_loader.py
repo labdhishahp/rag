@@ -19,6 +19,8 @@ from typing import Union
 
 import fitz  # PyMuPDF
 
+from pdf_layout import extract_pages
+
 # Target size for grouping DOCX paragraphs into pseudo-pages.
 _DOCX_PAGE_TARGET_CHARS = 1500
 
@@ -36,36 +38,43 @@ def load_pdf(pdf_path: Union[str, Path]) -> list[dict]:    #Create a function ca
  
 
 def load_pdf_from_bytes(pdf_bytes: bytes) -> list[dict]:   #this creates func that accepts raw Pdf bytes  than file name  (why not filename- as u dont have to save it fitst)
-    """Extract text from a PDF provided as raw bytes."""
+    """
+    Extract text from a PDF provided as raw bytes.
+
+    Delegates to pdf_layout.extract_pages, which reads the PDF's own layout
+    (blocks, font sizes, positions) instead of guessing structure from
+    character counts. Each returned page carries:
+        page_number   real, verifiable PDF page number
+        page_label    "page"
+        text          one paragraph/heading/table per line, wraps already joined
+        headings      block strings judged to be section headings
+        structured    True — the chunker must not re-derive the layout
+    """
     if not pdf_bytes:    #agar bytes empty hai to error throw karega.
         raise ValueError("PDF bytes are empty.")
 
-    pages: list[dict] = []
+    return extract_pages(pdf_bytes)
 
+
+def load_pdf_raw_text(pdf_bytes: bytes) -> list[dict]:
+    """
+    The pre-Step-2b extraction: plain text per page, newline at every visual
+    line break, no layout analysis. Kept so the old and new pipelines can be
+    compared on the same document (scripts/legacy_stage0.py).
+    """
+    if not pdf_bytes:
+        raise ValueError("PDF bytes are empty.")
+
+    pages: list[dict] = []
     with fitz.open(stream=pdf_bytes, filetype="pdf") as doc:
         if doc.page_count == 0:
             raise ValueError("PDF has no pages.")
-
         for page_index in range(doc.page_count):
-            page = doc[page_index]
-            text = page.get_text("text").strip()   ##for eg. it removes whitespaces and newlines.
-            pages.append(
-                {
-                    "page_number": page_index + 1,
-                    # A PDF page number is a real, verifiable location, so we
-                    # label it honestly as "page". See load_docx_from_bytes for
-                    # why DOCX cannot make the same claim.
-                    "page_label": "page",
-                    "text": text,
-                }
-            )
+            text = doc[page_index].get_text("text").strip()
+            pages.append({"page_number": page_index + 1, "page_label": "page", "text": text})
 
     if not any(page["text"] for page in pages):
-        raise ValueError(
-            "No extractable text found in the PDF. "
-            "It may be scanned images only (needs OCR) or empty."
-        )
-
+        raise ValueError("No extractable text found in the PDF.")
     return pages
 
 
@@ -89,17 +98,25 @@ def load_docx_from_bytes(docx_bytes: bytes) -> list[dict]:
 
     doc = Document(io.BytesIO(docx_bytes))  #docx_bytes are raw bytes. ,,,io.BytesIO(...) makes them behave like a file.
 
+    # Word documents carry their structure explicitly: every paragraph has a
+    # style, and headings use "Heading 1", "Heading 2", "Title", ... So unlike
+    # PDFs we never need to guess what a heading is — we read the style name.
     paragraphs: list[str] = []
+    headings: set[str] = set()
     for para in doc.paragraphs:
-        text = para.text.strip()   #Get paragraph text and remove surrounding whitespace.
-        if text:
-            paragraphs.append(text)
+        text = " ".join(para.text.split())   #Get paragraph text and collapse whitespace.
+        if not text:
+            continue
+        paragraphs.append(text)
+        style = (para.style.name if para.style is not None else "") or ""
+        if style.lower().startswith(("heading", "title")):
+            headings.add(text)
 
     for table in doc.tables:     #Take all the non-empty cells in this row, clean their text, and join them together with | between them.
         for row in table.rows:
             row_text = " | ".join(cell.text.strip() for cell in row.cells if cell.text.strip())
             if row_text:
-                paragraphs.append(row_text)
+                paragraphs.append(" ".join(row_text.split()))
 
     if not paragraphs:
         raise ValueError(
@@ -112,33 +129,34 @@ def load_docx_from_bytes(docx_bytes: bytes) -> list[dict]:
     buffer: list[str] = []    #paragraphs currently being collected
     char_count = 0            #how many characters we've collected so far.
 
+    def close_page() -> None:
+        pages.append(
+            {
+                "page_number": page_num,
+                # NOT a real page. A .docx has no fixed pagination, so this
+                # number is our own invention. Labelling it "part" keeps
+                # citations honest — we must never tell the user "page 3"
+                # when no such page exists in their file. ("part", not
+                # "section", so it cannot be confused with the heading-based
+                # section metadata on each chunk.)
+                "page_label": "part",
+                "text": "\n".join(buffer),
+                "headings": [p for p in buffer if p in headings],
+                "structured": True,
+            }
+        )
+
     for para in paragraphs:    #Take paragraphs one at a time.
         buffer.append(para)     #Put the paragraph into the current pseudo-page.
         char_count += len(para)     #Count how many characters we've collected.
         if char_count >= _DOCX_PAGE_TARGET_CHARS:   #So when we reach approximately 1500 characters: Close this pseudo-page.
-            pages.append(
-                {
-                    "page_number": page_num,
-                    # NOT a real page. A .docx has no fixed pagination, so this
-                    # number is our own invention. Labelling it "section" keeps
-                    # citations honest — we must never tell the user "page 3"
-                    # when no such page exists in their file.
-                    "page_label": "section",
-                    "text": "\n\n".join(buffer),
-                }
-            )
+            close_page()
             page_num += 1  #Move to the next pseudo-page.
             buffer = []
             char_count = 0  #Reset the character count for the next pseudo-page.
 
     if buffer:    #If there are any remaining paragraphs that didn't fit in the LAST pseudo-page:
-        pages.append(
-            {
-                "page_number": page_num,
-                "page_label": "section",
-                "text": "\n\n".join(buffer),
-            }
-        )
+        close_page()
 
     return pages
 

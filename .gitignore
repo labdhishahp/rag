@@ -10,3 +10,9 @@ __pycache__/
 .env
 .env.*
 !.env.example
+
+# Real-document validation corpus: fetched by scripts/fetch_real_docs.py, never committed
+data/real/
+
+# pytest
+.pytest_cache/

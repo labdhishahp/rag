@@ -56,6 +56,34 @@ import re
 
 from document_loader import clean_text_structured, is_heading
 
+
+def page_text_for_chunking(page: dict) -> str:
+    """
+    The exact text the chunker slices, and therefore the coordinate space of
+    every chunk's char_start/char_end.
+
+    Pages from pdf_layout / the DOCX loader are already structured (one block
+    per line, wraps joined) and carry "structured": True — use them verbatim.
+    Anything else (plain text, the legacy raw-PDF path) goes through the older
+    character-width heuristic as a fallback.
+
+    Tests must reconstruct chunk text through THIS function, never by calling
+    a cleaner directly, or the offset invariant is being checked against the
+    wrong string.
+    """
+    if page.get("structured"):
+        lines = [" ".join(line.split()) for line in page["text"].split("\n")]
+        return "\n".join(line for line in lines if line)
+    return clean_text_structured(page["text"])
+
+
+def _page_heading_test(page: dict):
+    """Return a predicate deciding whether a block line is a heading on this page."""
+    if page.get("structured"):
+        known = {" ".join(h.split()) for h in page.get("headings", [])}
+        return lambda line: line in known
+    return is_heading
+
 # A sentence ends at . ! or ? followed by whitespace and then something that
 # starts a new sentence (capital letter, digit, or an opening bracket).
 #
@@ -99,11 +127,14 @@ def chunk_pages(
 
     chunks: list[dict] = []
     chunk_id = 0
+    # A section continues until the next heading, even across a page break.
+    # Without this, every page that happens to contain no heading of its own
+    # would report section=None for all its chunks.
+    current_section: str | None = None
 
     for page in pages:
-        # Structure-preserving clean: keeps the newlines that mark headings,
-        # standalone formulas and list items.
-        text = clean_text_structured(page["text"])
+        # One block per line: headings, paragraphs, list items, tables.
+        text = page_text_for_chunking(page)
         if not text:
             continue
 
@@ -116,10 +147,13 @@ def chunk_pages(
 
         spans = _pack_units(units, text, chunk_size, chunk_overlap)
         spans = _merge_runt_tail(spans, text, min_chunk_chars, chunk_size)
-        headings = _heading_positions(text)
+        headings = _heading_positions(text, _page_heading_test(page))
 
         for position_in_page, (start, end) in enumerate(spans):
             chunk_text = text[start:end]
+            section_here = _section_for(headings, start)
+            if section_here is not None:
+                current_section = section_here
             chunks.append(
                 {
                     "chunk_id": chunk_id,
@@ -128,10 +162,11 @@ def chunk_pages(
                     "document_id": document_id,
                     "page_number": page_number,
                     "page_label": page_label,
-                    # The nearest heading at or above this chunk's start.
-                    # None when the page has no detectable heading — we never
-                    # invent one.
-                    "section": _section_for(headings, start),
+                    # The nearest heading at or above this chunk's start,
+                    # carried forward from earlier pages when this page has
+                    # none. None only before the first heading in the
+                    # document — we never invent one.
+                    "section": current_section,
                     "position_in_page": position_in_page,
                     "char_start": start,
                     "char_end": end,
@@ -255,11 +290,19 @@ def _pack_units(
             break
 
         # Overlap: walk back from the end, taking whole units, while they fit
-        # in the overlap budget. next_first must advance to guarantee progress.
+        # in the overlap budget. Two guarantees:
+        #   - next_first > first, so we always make progress
+        #   - the next chunk can still hold unit last+1 (something NEW). Without
+        #     this check, a long unit following short ones produced chunks made
+        #     entirely of overlap text: 'Stage / Retrieval / process' then
+        #     'Retrieval / process' — pure duplicates that then embedded and
+        #     competed in search.
         next_first = last + 1
         while next_first - 1 > first:
             candidate = next_first - 1
             if units[last][1] - units[candidate][0] > chunk_overlap:
+                break
+            if units[last + 1][1] - units[candidate][0] > chunk_size:
                 break
             next_first = candidate
 
@@ -275,29 +318,46 @@ def _merge_runt_tail(
     chunk_size: int,
 ) -> list[tuple[int, int]]:
     """
-    Fold a too-short final chunk into its predecessor.
+    Fold too-short chunks into a neighbour.
 
     Step 0 measured a 78-character chunk whose content was almost entirely the
     overlap window repeating the previous chunk. It carried no new meaning, yet
     it competed in every similarity search — and actually ranked FIRST for an
     unrelated question. Merging it away removes that noise.
 
-    We allow the merged chunk to exceed chunk_size somewhat, because one
-    slightly long chunk is better than one useless one.
+    A runt can appear anywhere a very long unit (a collapsed table, a run-on
+    line) sits next to a few tiny ones, not only at the end of a page, so every
+    span is checked. Prefer merging backwards; fall back to forwards. Allow the
+    merged chunk to exceed chunk_size somewhat — one slightly long chunk is
+    better than one useless one.
     """
-    if len(spans) < 2:
-        return spans
+    limit = chunk_size * 1.5
+    merged: list[tuple[int, int]] = []
+    pending_runt: tuple[int, int] | None = None
 
-    start, end = spans[-1]
-    if end - start >= min_chunk_chars:
-        return spans
+    for start, end in spans:
+        if pending_runt is not None:
+            # Try to attach the previous runt to the FRONT of this span.
+            if end - pending_runt[0] <= limit:
+                start = pending_runt[0]
+            else:
+                merged.append(pending_runt)  # could not place it; keep as-is
+            pending_runt = None
 
-    previous_start, _ = spans[-2]
-    merged = (previous_start, end)
-    if merged[1] - merged[0] > chunk_size * 1.5:
-        return spans  # would create an oversized chunk; leave the runt alone
+        if end - start >= min_chunk_chars:
+            merged.append((start, end))
+            continue
 
-    return spans[:-2] + [merged]
+        # Runt: attach to the previous span if that stays within the limit.
+        if merged and end - merged[-1][0] <= limit:
+            merged[-1] = (merged[-1][0], end)
+        else:
+            pending_runt = (start, end)
+
+    if pending_runt is not None:
+        merged.append(pending_runt)
+
+    return merged
 
 
 # --------------------------------------------------------------------------
@@ -305,12 +365,12 @@ def _merge_runt_tail(
 # --------------------------------------------------------------------------
 
 
-def _heading_positions(text: str) -> list[tuple[int, str]]:
-    """(start offset, heading text) for every block that looks like a heading."""
+def _heading_positions(text: str, heading_test=is_heading) -> list[tuple[int, str]]:
+    """(start offset, heading text) for every block the predicate accepts."""
     return [
         (start, text[start:end])
         for start, end in _block_spans(text)
-        if is_heading(text[start:end])
+        if heading_test(text[start:end])
     ]
 
 
