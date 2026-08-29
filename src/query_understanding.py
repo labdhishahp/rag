@@ -67,11 +67,19 @@ _REFERENT_CUES = (
     r"\b(it|its|this|that|these|those|they|them|he|she|him|her|his|the (previous|former|latter|second|first|other|same) one)\b",
     r"\b(more|further|again|elaborate|expand)\b",
     r"\b(the (previous|above|earlier|last) (one|answer|point|method|formula))\b",
-    r"^\s*(why|how|when|where)\??\s*$",
+    r"^\s*(why|how|when|where)\s*[.?!]*\s*$",
     r"\b(compare|difference) (it|that|this|them)\b",
     r"\bwhich (one|is better|would you)\b",
     # A request for an example with no topic named: "Can you give me an example?"
-    r"^\s*(can you |could you |please |would you )?(give|show|provide)( me)? (an|another|one more|a second|some) examples?\??\s*$",
+    #
+    # The terminal-punctuation class is deliberate, not cosmetic. These two cues
+    # used to end in `\??\s*$`, which accepts a question mark or nothing but NOT
+    # a full stop — so "Give me an example?" was read as a follow-up and "Give
+    # me an example." was not. The miss was invisible for a long time because
+    # retrieval on the bare sentence happened to land near the right chunk
+    # anyway; it only became a visible refusal once the scores shifted. A cue
+    # about sentence MEANING should never hinge on which terminator was typed.
+    r"^\s*(can you |could you |please |would you )?(give|show|provide)( me)? (an|another|one more|a second|some) examples?\s*[.?!]*\s*$",
     # A short definite reference with no topic: "What do the variables mean?"
     r"^\s*(what|how|why|when)\b.{0,30}\bthe (variables?|formula|equation|method|approach|steps?|process|policy|terms?|components?|parts?)\b",
 )

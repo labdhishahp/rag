@@ -17,7 +17,6 @@ import re
 from pathlib import Path
 from typing import Union
 
-import fitz  # PyMuPDF
 
 from pdf_layout import extract_pages
 
@@ -54,28 +53,6 @@ def load_pdf_from_bytes(pdf_bytes: bytes) -> list[dict]:   #this creates func th
         raise ValueError("PDF bytes are empty.")
 
     return extract_pages(pdf_bytes)
-
-
-def load_pdf_raw_text(pdf_bytes: bytes) -> list[dict]:
-    """
-    The pre-Step-2b extraction: plain text per page, newline at every visual
-    line break, no layout analysis. Kept so the old and new pipelines can be
-    compared on the same document (scripts/legacy_stage0.py).
-    """
-    if not pdf_bytes:
-        raise ValueError("PDF bytes are empty.")
-
-    pages: list[dict] = []
-    with fitz.open(stream=pdf_bytes, filetype="pdf") as doc:
-        if doc.page_count == 0:
-            raise ValueError("PDF has no pages.")
-        for page_index in range(doc.page_count):
-            text = doc[page_index].get_text("text").strip()
-            pages.append({"page_number": page_index + 1, "page_label": "page", "text": text})
-
-    if not any(page["text"] for page in pages):
-        raise ValueError("No extractable text found in the PDF.")
-    return pages
 
 
 def load_docx_from_bytes(docx_bytes: bytes) -> list[dict]:

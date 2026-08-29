@@ -1,11 +1,39 @@
+# Runtime dependencies — this is exactly what the deployed backend installs.
+#
+# Nothing here is optional and nothing here is for development. The local
+# embedding backend (torch + sentence-transformers, ~650MB), Streamlit and the
+# test tooling live in requirements-dev.txt, because a serverless function that
+# ships them does not fit and would not use them.
+#
+# Measured uncompressed footprint: ~175MB against Vercel's 500MB Python limit.
+
+# --- API layer -------------------------------------------------------------
+fastapi>=0.115.0
+python-multipart>=0.0.9
+
+# --- document ingestion (Phase 1: layout-aware extraction) -----------------
+# PyMuPDF is not interchangeable here. The layout pipeline reads the geometry it
+# exposes through get_text("dict") — blocks, spans, font sizes, bboxes. Swapping
+# in a pure-Python PDF reader would silently regress heading detection,
+# de-hyphenation and running-header removal to the pre-Phase-1 behaviour.
 pymupdf>=1.24.0
 python-docx>=1.1.0
-sentence-transformers>=3.0.0
-faiss-cpu>=1.8.0
+
+# --- retrieval -------------------------------------------------------------
+# Exact inner-product search over one document's vectors. Replaces FAISS, which
+# computed the same matrix product but could not persist across invocations.
 numpy>=1.26.0
-streamlit>=1.28.0
+
+# --- embeddings + generation ----------------------------------------------
 google-genai>=1.0.0
+
+# --- persistence -----------------------------------------------------------
+psycopg[binary]>=3.1
+
+# Reads .env when running locally. A deployed function is handed its
+# environment by the platform, so the import is treated as optional.
 python-dotenv>=1.0.0
 
-# Testing
-pytest>=8.0
+# --- local ASGI server -----------------------------------------------------
+# Vercel supplies its own server; this is for `uvicorn api.main:app`.
+uvicorn>=0.30.0

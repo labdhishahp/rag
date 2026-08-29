@@ -6,34 +6,43 @@ Why this file exists:
   with the same value and the same intent. Two copies drift. Everything that
   interprets a similarity score or sizes a context now reads from here.
 
-How the thresholds were chosen:
-  Measured, not guessed, and specific to the embedding model (cosine scores
-  are not comparable across models). For BAAI/bge-small-en-v1.5 on the gold
-  set (eval/results/exp-bge-small.json), best-hit similarity:
+------------------------------------------------------------------------------
+WHERE THE SIMILARITY FLOORS COME FROM
+------------------------------------------------------------------------------
+They were measured, not chosen by feel, and they belong to ONE embedding model
+(gemini-embedding-001 at 768 dimensions). Cosine scores are not comparable
+across models: each spreads "unrelated" and "relevant" over its own range, so a
+threshold carried over from another model is a threshold that means nothing.
 
-    absent questions        0.415  0.419  0.452  0.506   | 0.758 (a05)
-    answerable questions    0.622 (min)  ...  0.917 (max)
+The measurement: over a 28-question gold set (23 answerable, 5 absent), record
+the best-hit similarity for each question and put the hard floor in the gap.
 
-  Four of five absent questions sit below 0.51; every answerable question sits
-  above 0.62. The hard floor splits that gap. The fifth absent question (a05,
-  "Acme's stock price" asked of Acme's financial report) scores 0.758 — a hard
-  negative that lands inside the answerable range under EVERY model we tried
-  (0.543 with MiniLM, above that model's answerable minimum too). No similarity
-  threshold can catch it; the generation prompt must. It stays in the gold set
-  precisely so that the refusal path is tested on a case retrieval cannot gate.
+    absent        0.504  0.507  0.524  0.535  | 0.691 (a05)
+    answerable    0.657 (min) ................. 0.834 (max)
+    gap (0.535, 0.657)  ->  hard 0.60,  soft 0.70
 
-  Between HARD and SOFT the system still answers but flags low confidence.
+Four of the five absent questions sit clearly below every answerable one. The
+fifth (a05 — "Acme's stock price" asked of Acme's financial report) lands
+inside the answerable range: a genuine hard negative that no similarity
+threshold can catch, which is why the generation prompt also carries a refusal
+rule. The soft floor is 0.70 rather than 0.69 because 0.70 flags a05 as low
+confidence without flagging one additional answerable question (the next is
+0.707).
 
-  If you change the embedding model, re-run eval/run_retrieval.py and re-read
-  these two numbers off the absent/answerable distribution before trusting them.
+Between HARD and SOFT the system still answers, but flags low confidence.
+
+If you change the embedding model or its dimensionality, these two numbers must
+be re-measured against a gold set. Do not interpolate. The evaluation harness
+that produced them is in git history (removed in the runtime-only cleanup);
+recover it with `git log --diff-filter=D -- eval/`.
 """
 
-# Below this, retrieval found nothing relevant. No expansion; the answer path
-# may decline without calling the LLM (Phase 3).
-SIMILARITY_HARD_FLOOR = 0.55
+# Below this, retrieval found nothing relevant. No expansion, and the answer
+# path declines WITHOUT calling the LLM (see rag.py).
+SIMILARITY_HARD_FLOOR = 0.60
 
 # Below this (but above the hard floor) the best hit is weak: answer, but warn.
-SIMILARITY_SOFT_FLOOR = 0.65
+SIMILARITY_SOFT_FLOOR = 0.70
 
 # Relative expansion margin: expand only around entries within this much of
 # the best hit. DISABLED (None) after measurement:
