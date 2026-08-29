@@ -1,0 +1,7 @@
+# RAG core dependencies (document ingestion, chunking, embeddings, FAISS, LLM).
+-r ../requirements.txt
+
+# API layer
+fastapi>=0.115.0
+uvicorn[standard]>=0.30.0
+python-multipart>=0.0.9
