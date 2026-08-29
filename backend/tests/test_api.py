@@ -19,8 +19,22 @@ def test_health_reports_readiness(client):
     assert response.status_code == 200
     body = response.json()
     assert body["status"] == "ok"
-    assert body["embedding_model_loaded"] is True
+    assert body["embedding_dimension"] > 0
+    assert body["storage_ok"] is True
     assert "llm_configured" in body
+
+
+def test_health_is_degraded_when_storage_is_unreachable(client, app):
+    """A process that answers HTTP but cannot reach its store is not ready."""
+    original = app.state.rag_state.storage.healthy
+    app.state.rag_state.storage.healthy = lambda: (False, "connection refused")
+    try:
+        body = client.get("/health").json()
+        assert body["status"] == "degraded"
+        assert body["storage_ok"] is False
+        assert body["storage_error"] == "connection refused"
+    finally:
+        app.state.rag_state.storage.healthy = original
 
 
 # ---- document upload --------------------------------------------------------
@@ -186,3 +200,53 @@ def test_delete_session_removes_it(client, indexed_session):
 
     after = client.get(f"/api/documents/{indexed_session}")
     assert after.status_code == 404
+
+
+# ---- persistence (the serverless requirement) --------------------------------
+
+def test_conversation_survives_losing_the_in_process_cache(client, indexed_session, app):
+    """
+    The serverless case: the next request may hit an instance that has never
+    seen this session. Dropping the hydrated-retriever cache simulates that;
+    the answer must still resolve the follow-up, which is only possible if the
+    document AND the conversation came back from storage rather than memory.
+    """
+    first = client.post(
+        "/api/chat",
+        json={"session_id": indexed_session, "question": "What is the compound interest formula?"},
+    )
+    assert first.status_code == 200
+
+    app.state.rag_state.retrievers._cache.clear()
+
+    follow_up = client.post(
+        "/api/chat",
+        json={"session_id": indexed_session, "question": "Explain it in more detail."},
+    )
+    assert follow_up.status_code == 200, follow_up.text
+    assert follow_up.json()["was_follow_up"] is True
+
+
+def test_stored_vectors_round_trip_exactly(client, formula_pdf_bytes, app):
+    """
+    Embeddings are persisted as raw float32 bytes precisely so that what comes
+    back is bit-identical. If it were not, every similarity score — and so
+    every calibrated threshold — would shift after a restart.
+    """
+    import numpy as np
+
+    upload = client.post(
+        "/api/documents",
+        files={"file": ("formula_sample.pdf", formula_pdf_bytes, "application/pdf")},
+    ).json()
+    storage = app.state.rag_state.storage
+    chunks, vectors = storage.load_chunks(upload["document"]["document_id"])
+
+    assert len(chunks) == upload["document"]["chunk_count"]
+    assert vectors.dtype == np.float32
+    assert vectors.shape[1] == upload["document"]["embedding_dimension"]
+    # Unit-normalized on the way in, so still unit-normalized on the way out.
+    assert np.allclose(np.linalg.norm(vectors, axis=1), 1.0, atol=1e-5)
+    # Chunk metadata must survive the JSON round trip intact — expansion depends
+    # on prev/next links and section labels being exactly what the chunker set.
+    assert {"chunk_id", "text", "section", "prev_chunk_id", "next_chunk_id"} <= set(chunks[0])

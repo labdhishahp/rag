@@ -55,6 +55,12 @@ def test_example_detection():
         ("Why?", True),
         ("Can you give me an example of that?", True),
         ("Which one is better?", True),
+        # Terminal punctuation must not decide whether a sentence leans on the
+        # conversation: all three of these are the same request.
+        ("Give me an example.", True),
+        ("Give me an example", True),
+        ("Show me an example.", True),
+        ("Why.", True),
         ("What is the compound interest formula?", False),
         ("What are the tenets of zero trust?", False),
         ("How does the trust algorithm decide whether to grant access to a resource?", False),

@@ -1,7 +1,40 @@
-# RAG core dependencies (document ingestion, chunking, embeddings, FAISS, LLM).
--r ../requirements.txt
+# Deployed backend dependencies — deliberately standalone.
+#
+# This file does NOT include ../requirements.txt. A serverless build uses this
+# directory as its root, so a parent-relative include would not resolve, and
+# the root file carries things the API must never ship: torch and
+# sentence-transformers (~650MB, the local embedding backend), Streamlit, and
+# the test tooling. Everything below is something a request actually uses.
+#
+# Measured uncompressed footprint: ~175MB against Vercel's 500MB Python limit.
 
-# API layer
+# --- API layer -------------------------------------------------------------
 fastapi>=0.115.0
-uvicorn[standard]>=0.30.0
 python-multipart>=0.0.9
+
+# --- document ingestion (Phase 1: layout-aware extraction) -----------------
+# PyMuPDF is not interchangeable here. The whole layout pipeline reads the
+# geometry it exposes via get_text("dict") — blocks, spans, font sizes, bboxes.
+# A pure-Python PDF reader would silently regress heading detection,
+# de-hyphenation and running-header removal back to the pre-Phase-1 behaviour.
+pymupdf>=1.24.0
+python-docx>=1.1.0
+
+# --- retrieval -------------------------------------------------------------
+# Exact inner-product search over a document's vectors. Replaces FAISS, which
+# computed the same matrix product but could not persist across invocations.
+numpy>=1.26.0
+
+# --- embeddings + generation ----------------------------------------------
+google-genai>=1.0.0
+
+# --- persistence -----------------------------------------------------------
+psycopg[binary]>=3.1
+
+# Local convenience: reads .env when running uvicorn directly. A deployed
+# function is given its environment by the platform; the import is optional.
+python-dotenv>=1.0.0
+
+# --- local server ----------------------------------------------------------
+# Vercel supplies its own ASGI server; this is for `uvicorn api.main:app`.
+uvicorn>=0.30.0

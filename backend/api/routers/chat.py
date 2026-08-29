@@ -25,7 +25,7 @@ def chat(payload: ChatRequest, request: Request):
         raise HTTPException(status_code=400, detail="Question cannot be empty.")
 
     state = request.app.state.rag_state
-    session = state.sessions.get(payload.session_id)
+    session = state.load_session(payload.session_id)
     if session is None:
         raise HTTPException(
             status_code=404,
@@ -60,13 +60,16 @@ def chat(payload: ChatRequest, request: Request):
         ) from None
 
     RAGSystem.record_turn(session.conversation, result)
+    # Persist only after a successful answer, so a failed turn never leaves a
+    # half-written history for the next request to read back.
+    state.save_turn(session)
     return serialize_answer_result(result)
 
 
 @router.post("/api/sessions/{session_id}/reset")
 def reset_session(session_id: str, request: Request):
     state = request.app.state.rag_state
-    if not state.sessions.reset_conversation(session_id):
+    if not state.storage.clear_conversation(session_id):
         raise HTTPException(status_code=404, detail="Session not found or expired.")
     return {"status": "ok"}
 
@@ -74,6 +77,6 @@ def reset_session(session_id: str, request: Request):
 @router.delete("/api/sessions/{session_id}")
 def delete_session(session_id: str, request: Request):
     state = request.app.state.rag_state
-    if not state.sessions.delete(session_id):
+    if not state.storage.delete_session(session_id):
         raise HTTPException(status_code=404, detail="Session not found.")
     return {"status": "ok"}

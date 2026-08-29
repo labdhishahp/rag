@@ -1,43 +1,57 @@
 """
-Store chunk embeddings in FAISS and map search results back to chunks.
-
-What is FAISS?
-  Facebook AI Similarity Search — a library for fast nearest-neighbor search
-  over many vectors. Instead of comparing a question to every chunk one by one
-  in Python loops, FAISS finds the closest vectors efficiently.
-
-Why a vector index?
-  With thousands or millions of chunks, brute-force comparison is slow.
-  Even for small documents, an index keeps the pattern clear and scales later.
+Store chunk embeddings and map search results back to chunks.
 
 What does vector similarity search do?
   Given a query vector, find the stored vectors with the highest similarity
   (here: cosine similarity via inner product on normalized vectors).
 
-What happens when we query?
-  FAISS returns:
-    - indices: positions in our index (0, 1, 2, ...) pointing to which vectors matched
-    - scores: similarity values (higher = more similar)
+Why not FAISS any more?
+  It used to be faiss.IndexFlatIP. "Flat" means FAISS stored the vectors in a
+  plain matrix and compared the query against EVERY one of them — exact search,
+  no approximation, no index structure. That is a single matrix multiply, which
+  numpy already does, so FAISS was a 30 MB compiled dependency computing
+  `matrix @ query` on our behalf.
 
-Why map index → chunk?
-  FAISS only stores numbers. It does not know page numbers or original text.
-  We keep a parallel list `chunks` where chunks[i] is the metadata for vector i.
+  It earned its place while the app was a long-lived local process. It stopped
+  earning it once the target became a serverless function, where the process
+  does not survive between requests: an in-memory index has to be rebuilt or
+  reloaded every time regardless, so the only thing FAISS contributed was
+  install weight and a C extension.
+
+  The maths is unchanged, and deliberately so. `scores = vectors @ query` on
+  L2-normalized rows IS cosine similarity, and IS what IndexFlatIP computed.
+  The retrieval evaluation is expected to produce byte-identical numbers before
+  and after this swap; if it does not, something else broke.
+
+  FAISS becomes the right answer again at a scale this project does not have
+  (roughly 10^5-10^6 vectors, where an approximate index like IVF or HNSW beats
+  brute force). At hundreds to low thousands of chunks, brute force wins on
+  simplicity and loses nothing on speed.
+
+Why a vector store at all, rather than comparing text directly?
+  Meaning is not string equality. Embedding turns "2024 revenue" and "how much
+  did the company earn last year?" into nearby vectors, and geometry does the
+  rest. See embeddings.py.
+
+Why map position -> chunk?
+  The matrix only holds numbers. It does not know page numbers or original
+  text. We keep a parallel list `chunks` where chunks[i] describes vector i.
 """
 
-import faiss
 import numpy as np
 
 
 class VectorStore:
-    """FAISS index + parallel chunk metadata."""
+    """Embedding matrix + parallel chunk metadata."""
 
     def __init__(self, dimension: int):
         self.dimension = dimension
-        # IndexFlatIP = exact search using inner product.
-        # With normalized vectors, inner product == cosine similarity.
-        self.index = faiss.IndexFlatIP(dimension)
+        # (N, dimension) float32, one L2-normalized row per chunk. None until
+        # the first add() — numpy has no natural empty-with-shape starting
+        # point that vstack treats cleanly.
+        self._vectors: np.ndarray | None = None
         self.chunks: list[dict] = []
-        # chunk_id -> position in self.chunks.
+        # (document_id, chunk_id) -> row in self._vectors / self.chunks.
         #
         # Why not just use chunk_id as the list index? Today they happen to
         # match, because the chunker numbers chunks 0..N-1 and we add them in
@@ -45,6 +59,11 @@ class VectorStore:
         # restarts its chunk_ids at 0 — so position and chunk_id would diverge
         # and silently return the wrong chunk. An explicit map cannot drift.
         self._id_to_position: dict[tuple[str | None, int], int] = {}
+
+    @property
+    def ntotal(self) -> int:
+        """How many vectors are stored. (Was index.ntotal under FAISS.)"""
+        return len(self.chunks)
 
     def add(self, embeddings: np.ndarray, chunks: list[dict]) -> None:
         """
@@ -61,7 +80,8 @@ class VectorStore:
             )
 
         base = len(self.chunks)
-        self.index.add(embeddings)
+        block = np.ascontiguousarray(embeddings, dtype=np.float32)
+        self._vectors = block if self._vectors is None else np.vstack([self._vectors, block])
         self.chunks.extend(chunks)
 
         for offset, chunk in enumerate(chunks):
@@ -78,7 +98,7 @@ class VectorStore:
         not of the embedding space.
 
         Returns a COPY, for the same reason search() does: callers annotate
-        results, and the index's own metadata must not be mutated.
+        results, and the store's own metadata must not be mutated.
         """
         position = self._id_to_position.get((document_id, chunk_id))
         if position is None:
@@ -103,23 +123,30 @@ class VectorStore:
 
         Why dict(chunk) and not chunk:
           Callers add fields like "similarity" to the result. Returning the
-          stored dict itself would let a caller mutate the index's own metadata,
+          stored dict itself would let a caller mutate the store's own metadata,
           and a later search would return a chunk polluted with a stale
           similarity score from a previous query.
         """
-        if self.index.ntotal == 0:
+        if self.ntotal == 0:
             raise ValueError("Vector store is empty. Add chunks before searching.")
 
-        top_k = min(top_k, self.index.ntotal)
+        top_k = min(top_k, self.ntotal)
 
-        # FAISS expects shape (1, dimension) for a single query.
-        query = query_embedding.reshape(1, -1).astype(np.float32)
-        scores, indices = self.index.search(query, top_k)
+        query = np.asarray(query_embedding, dtype=np.float32).reshape(-1)
+        # Rows are L2-normalized (embeddings.py) and so is the query, so the
+        # inner product is the cosine similarity. This one line is the entirety
+        # of what IndexFlatIP did.
+        scores = self._vectors @ query
+
+        # A stable descending sort: ties resolve to the lower row index, which
+        # is the order a flat index reports them in. Only the top_k slice is
+        # ordered, but at this corpus size a full argsort is not worth avoiding.
+        order = np.argsort(-scores, kind="stable")[:top_k]
 
         results: list[dict] = []
-        for rank, (idx, score) in enumerate(zip(indices[0], scores[0]), start=1):
-            result = dict(self.chunks[idx])
-            result["similarity"] = float(score)
+        for rank, position in enumerate(order, start=1):
+            result = dict(self.chunks[int(position)])
+            result["similarity"] = float(scores[position])
             result["rank"] = rank
             results.append(result)
 

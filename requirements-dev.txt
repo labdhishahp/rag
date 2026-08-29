@@ -1,0 +1,17 @@
+# Local development and evaluation. NOT installed by the deployment.
+-r requirements.txt
+
+# The local embedding backend (EMBEDDING_BACKEND=local). Pulls in torch, which
+# is ~530MB on its own — far past what a serverless function can carry, and the
+# reason the deployed API uses the embedding API instead.
+#
+# Kept because it is genuinely useful here: tests stay hermetic, free and
+# offline, and retrieval experiments can be re-run without spending API quota.
+sentence-transformers>=3.0.0
+
+# The original Streamlit UI, retained as a fallback alongside the Next.js
+# frontend. Never part of the deployed API.
+streamlit>=1.28.0
+
+# Testing
+pytest>=8.0

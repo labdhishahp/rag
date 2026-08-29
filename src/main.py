@@ -51,7 +51,7 @@ def build_retriever() -> Retriever:
 
     store = VectorStore(dimension=embedding_model.dimension)
     store.add(embeddings, chunks)
-    print(f"  Vectors in FAISS index: {store.index.ntotal}")
+    print(f"  Vectors in store: {store.ntotal}")
 
     return Retriever(embedding_model, store)
 

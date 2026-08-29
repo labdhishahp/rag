@@ -1,0 +1,23 @@
+[project]
+name = "knowledge-assistant"
+version = "1.0.0"
+description = "Grounded document Q&A: layout-aware ingestion, measured retrieval, evidence gating, cited answers."
+# A hard floor, not a preference: the codebase uses PEP 604 unions (`str | None`)
+# throughout, which are a syntax error on 3.9. Declared here so a deployment
+# cannot silently pick an older interpreter.
+requires-python = ">=3.10"
+dynamic = ["dependencies"]
+
+[tool.setuptools.dynamic]
+dependencies = { file = ["requirements.txt"] }
+
+[tool.vercel]
+# Declared, not auto-detected, for two reasons:
+#
+#   1. Vercel's Python detection scans for a top-level app.py / main.py /
+#      server.py exporting `app`. This repository HAS a root app.py — the legacy
+#      Streamlit UI, which is not an ASGI app and must never be the entrypoint.
+#   2. The API is served from the repository root rather than backend/, because
+#      backend/api/rag_bridge.py imports the RAG core from ../src. Rooting the
+#      deployment at backend/ would leave src/ outside the bundle entirely.
+entrypoint = "backend/api/main.py"

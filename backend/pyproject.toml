@@ -1,0 +1,18 @@
+[project]
+name = "knowledge-assistant-api"
+version = "1.0.0"
+description = "HTTP API in front of the RAG core: ingestion, retrieval, evidence gating, grounded answers."
+# 3.10 is a hard floor, not a preference: the codebase uses PEP 604 unions
+# (`str | None`) throughout, which are a syntax error on 3.9.
+requires-python = ">=3.10"
+dynamic = ["dependencies"]
+
+[tool.setuptools.dynamic]
+dependencies = { file = ["requirements.txt"] }
+
+[tool.vercel]
+# Declared rather than auto-detected. Vercel's Python detection scans for a
+# top-level app.py / main.py / server.py exporting `app`, and the repository
+# root has an app.py that is the legacy Streamlit UI — not an ASGI app. Naming
+# the entrypoint explicitly removes any ambiguity about what gets served.
+entrypoint = "api/main.py"

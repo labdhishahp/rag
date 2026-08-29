@@ -19,10 +19,7 @@ session. No database: a TTL + max-session cap bounds memory instead.
 import dataclasses
 import logging
 import sys
-import time
-import uuid
 from pathlib import Path
-from threading import Lock
 from typing import Optional
 
 import numpy as np
@@ -40,103 +37,73 @@ from llm import LLMClient, LLMError, create_llm  # noqa: E402
 from pipeline import DocumentProcessingError, index_document_from_upload  # noqa: E402
 from rag import RAGSystem  # noqa: E402
 from retriever import Retriever  # noqa: E402
+from vector_store import VectorStore  # noqa: E402
 
 logger = logging.getLogger("rag_api")
 
 __all__ = [
     "Conversation",
+    "EmbeddingModel",
     "LLMClient",
     "LLMError",
     "DocumentProcessingError",
     "index_document_from_upload",
     "RAGSystem",
-    "Session",
-    "SessionStore",
+    "Retriever",
+    "VectorStore",
     "AppState",
     "serialize_answer_result",
+    "public_document_metadata",
 ]
 
 
-class Session:
-    """One indexed document plus the conversation held against it."""
+class LoadedSession:
+    """
+    One request's view of a session: the document, its retriever, its history.
 
-    def __init__(self, session_id: str, retriever: Retriever, metadata: dict):
+    Assembled per request rather than held between them. On a serverless
+    platform there is no "between them" to hold it in — see storage.py.
+    """
+
+    def __init__(self, session_id: str, document_id: str, metadata: dict,
+                 retriever: Retriever, conversation: Conversation):
         self.session_id = session_id
-        self.retriever = retriever
+        self.document_id = document_id
         self.metadata = metadata
-        self.conversation = Conversation()
-        self.created_at = time.time()
-        self.last_used_at = self.created_at
-
-
-class SessionStore:
-    def __init__(self, max_sessions: int = 200, ttl_seconds: int = 6 * 3600):
-        self._sessions: dict[str, Session] = {}
-        self._lock = Lock()
-        self._max_sessions = max_sessions
-        self._ttl_seconds = ttl_seconds
-
-    def create(self, retriever: Retriever, metadata: dict) -> Session:
-        with self._lock:
-            self._evict_expired_locked()
-            if len(self._sessions) >= self._max_sessions:
-                oldest_id = min(self._sessions, key=lambda k: self._sessions[k].last_used_at)
-                del self._sessions[oldest_id]
-            session_id = uuid.uuid4().hex
-            session = Session(session_id, retriever, metadata)
-            self._sessions[session_id] = session
-            return session
-
-    def get(self, session_id: str) -> Optional[Session]:
-        with self._lock:
-            session = self._sessions.get(session_id)
-            if session is None:
-                return None
-            if time.time() - session.last_used_at > self._ttl_seconds:
-                del self._sessions[session_id]
-                return None
-            session.last_used_at = time.time()
-            return session
-
-    def reset_conversation(self, session_id: str) -> bool:
-        session = self.get(session_id)
-        if session is None:
-            return False
-        session.conversation = Conversation()
-        return True
-
-    def delete(self, session_id: str) -> bool:
-        with self._lock:
-            return self._sessions.pop(session_id, None) is not None
-
-    def count(self) -> int:
-        with self._lock:
-            return len(self._sessions)
-
-    def _evict_expired_locked(self) -> None:
-        now = time.time()
-        expired = [sid for sid, s in self._sessions.items() if now - s.last_used_at > self._ttl_seconds]
-        for sid in expired:
-            del self._sessions[sid]
+        self.retriever = retriever
+        self.conversation = conversation
+        # How many turns were already persisted when this session was loaded,
+        # so a later append writes only what this request actually added.
+        self.persisted_turns = len(conversation.turns)
 
 
 class AppState:
-    """Process-wide singletons, built once at startup."""
+    """
+    Everything a request needs that is worth building once per process.
+
+    The embedding model and LLM client are cheap to hold and expensive to
+    rebuild; sessions and documents deliberately are NOT held here, because a
+    serverless instance cannot be trusted to still exist on the next request.
+    """
 
     def __init__(
         self,
         embedding_model: EmbeddingModel,
         llm: Optional[LLMClient],
         llm_init_error: Optional[str],
-        sessions: SessionStore,
+        storage,
+        retrievers,
     ):
         self.embedding_model = embedding_model
         self.llm = llm
         self.llm_init_error = llm_init_error
-        self.sessions = sessions
+        self.storage = storage
+        self.retrievers = retrievers
 
     @classmethod
-    def build(cls, *, max_sessions: int, ttl_seconds: int, llm_provider: str = "gemini") -> "AppState":
+    def build(cls, *, database_url: Optional[str] = None, llm_provider: str = "gemini") -> "AppState":
+        from .storage import RetrieverCache, create_storage
+
         embedding_model = EmbeddingModel()
 
         llm: Optional[LLMClient] = None
@@ -147,8 +114,28 @@ class AppState:
             llm_init_error = str(exc)
             logger.warning("LLM not configured at startup: %s", llm_init_error)
 
-        sessions = SessionStore(max_sessions=max_sessions, ttl_seconds=ttl_seconds)
-        return cls(embedding_model, llm, llm_init_error, sessions)
+        storage = create_storage(database_url)
+        return cls(embedding_model, llm, llm_init_error, storage, RetrieverCache(storage))
+
+    # ---- session assembly -------------------------------------------------
+    def load_session(self, session_id: str) -> Optional[LoadedSession]:
+        """Rebuild a session from storage, or None if it is unknown/expired."""
+        document_id = self.storage.touch_session(session_id)
+        if document_id is None:
+            return None
+        metadata = self.storage.get_document(document_id)
+        if metadata is None:
+            return None
+        retriever = self.retrievers.get(document_id, self.embedding_model)
+        if retriever is None:
+            return None
+        conversation = self.storage.load_conversation(session_id)
+        return LoadedSession(session_id, document_id, metadata, retriever, conversation)
+
+    def save_turn(self, session: "LoadedSession") -> None:
+        self.storage.append_turns(
+            session.session_id, session.conversation, session.persisted_turns
+        )
 
 
 def _sanitize(obj):

@@ -28,14 +28,13 @@ logger = logging.getLogger("rag_api")
 async def lifespan(app: FastAPI):
     logger.info("Loading embedding model and LLM client...")
     app.state.rag_state = AppState.build(
-        max_sessions=settings.max_sessions,
-        ttl_seconds=settings.session_ttl_seconds,
+        database_url=settings.database_url,
         llm_provider=settings.llm_provider,
     )
     logger.info(
-        "Startup complete. llm_configured=%s active_sessions=%d",
+        "Startup complete. llm_configured=%s storage=%s",
         app.state.rag_state.llm is not None,
-        app.state.rag_state.sessions.count(),
+        type(app.state.rag_state.storage).__name__,
     )
     yield
 

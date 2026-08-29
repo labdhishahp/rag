@@ -8,12 +8,18 @@ router = APIRouter(tags=["health"])
 @router.get("/health")
 def health(request: Request):
     state = request.app.state.rag_state
+    storage_ok, storage_error = state.storage.healthy()
     return {
-        "status": "ok",
-        "embedding_model_loaded": state.embedding_model is not None,
-        "embedding_model_name": getattr(state.embedding_model, "model_name", None),
+        # "ok" only when the dependencies a request actually needs are reachable.
+        # A process that answers HTTP but cannot reach its database is not ready,
+        # and a monitor should be able to tell the difference.
+        "status": "ok" if storage_ok else "degraded",
+        "embedding_backend": getattr(state.embedding_model, "backend_name", None),
+        "embedding_model": getattr(state.embedding_model, "model_name", None),
         "embedding_dimension": getattr(state.embedding_model, "dimension", None),
         "llm_configured": state.llm is not None,
         "llm_error": state.llm_init_error,
-        "active_sessions": state.sessions.count(),
+        "storage": type(state.storage).__name__,
+        "storage_ok": storage_ok,
+        "storage_error": storage_error,
     }

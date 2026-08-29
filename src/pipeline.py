@@ -83,7 +83,7 @@ def _document_metadata(
         "document_id": document_id,
         "page_label": pages[0].get("page_label", "page") if pages else "page",
         "page_count": len(pages),
-        "chunk_count": retriever.vector_store.index.ntotal,
+        "chunk_count": retriever.vector_store.ntotal,
         "embedding_dimension": embedding_model.dimension,
         "status": "ready",
     }

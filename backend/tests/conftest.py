@@ -9,11 +9,18 @@ behavior through the HTTP boundary without spending Gemini quota.
 Run from backend/:  python -m pytest
 """
 
+import os
 import sys
 from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
+
+# Hermetic by construction: these tests exercise the HTTP boundary and the real
+# retrieval/gating logic, so the embedding backend must not depend on a network
+# call or an API quota. Set before importing the app, which builds the model at
+# startup. (Quality of the deployed backend is measured in eval/, not here.)
+os.environ.setdefault("EMBEDDING_BACKEND", "local")
 
 BACKEND_DIR = Path(__file__).resolve().parent.parent
 if str(BACKEND_DIR) not in sys.path:

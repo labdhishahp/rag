@@ -35,7 +35,7 @@ async def upload_document(request: Request, file: UploadFile = File(...)):
 
     state = request.app.state.rag_state
     try:
-        retriever, metadata = index_document_from_upload(
+        _, metadata = index_document_from_upload(
             data, filename=filename, embedding_model=state.embedding_model,
         )
     except DocumentProcessingError as exc:
@@ -47,15 +47,31 @@ async def upload_document(request: Request, file: UploadFile = File(...)):
             detail="Something went wrong while processing the document. See server logs for details.",
         ) from None
 
-    metadata = public_document_metadata(metadata)
-    session = state.sessions.create(retriever, metadata)
-    return {"session_id": session.session_id, "document": metadata}
+    # Persist the chunks and their vectors, then open a session against the
+    # document. The retriever built during indexing is deliberately discarded:
+    # the next request may land on a different instance, so the only copy that
+    # matters is the stored one, and it is re-hydrated on demand (storage.py).
+    chunks = metadata["chunks"]
+    embeddings = metadata["embeddings"]
+    document = public_document_metadata(metadata)
+    try:
+        state.storage.save_document(document, chunks, embeddings)
+        state.retrievers.invalidate(document["document_id"])
+        session_id = state.storage.create_session(document["document_id"])
+    except Exception:
+        logger.exception("Failed to persist document %s", filename)
+        raise HTTPException(
+            status_code=500,
+            detail="The document was processed but could not be saved. See server logs for details.",
+        ) from None
+
+    return {"session_id": session_id, "document": document}
 
 
 @router.get("/api/documents/{session_id}")
 def get_document(session_id: str, request: Request):
     state = request.app.state.rag_state
-    session = state.sessions.get(session_id)
+    session = state.load_session(session_id)
     if session is None:
         raise HTTPException(
             status_code=404,
