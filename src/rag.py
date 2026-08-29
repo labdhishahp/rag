@@ -38,7 +38,7 @@ from prompt_builder import REFUSAL_TEXT, build_rag_prompt
 from query_understanding import retrieval_config_for, understand
 from retriever import Retriever
 
-# Kept as a name for the Streamlit sidebar; the value lives in config.py.
+# Exposed as a name for callers; the value itself lives in config.py.
 DEFAULT_SIMILARITY_THRESHOLD = SIMILARITY_SOFT_FLOOR
 
 _CITATION = re.compile(r"\[S(\d{1,2})\]")
@@ -66,7 +66,7 @@ class RAGSystem:
         self.retriever = retriever
         self.llm = llm
         # None means "let the request decide" (query_understanding); a value
-        # pins it (the Streamlit sidebar, experiments).
+        # pins it (an explicit caller override).
         self.top_k = top_k
         self.similarity_threshold = similarity_threshold
         self.embedding_dimension = (
@@ -203,7 +203,7 @@ class RAGSystem:
             "cited_sources": [source_citations[i - 1] for i in cited if 0 < i <= len(source_citations)],
             "cited_labels": cited,
             # Entry-point similarity hits. Kept under the original key so the
-            # Streamlit UI keeps working unchanged.
+            # original key so existing callers keep working unchanged.
             "chunks": chunks,
             "best_similarity": best_similarity,
             "low_confidence": low_confidence,

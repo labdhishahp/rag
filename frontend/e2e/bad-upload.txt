@@ -1,1 +1,0 @@
-This is a plain text file, not a PDF or DOCX — used to test the upload rejection path.

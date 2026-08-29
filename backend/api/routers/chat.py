@@ -1,4 +1,4 @@
-"""Ask a question of an indexed document — the API equivalent of app.py's chat loop."""
+"""Ask a question of an indexed document: retrieve, gate, generate, cite."""
 
 import logging
 from typing import Optional

@@ -2,9 +2,8 @@
 Environment-based configuration for the API layer.
 
 Nothing here is a secret. GEMINI_API_KEY lives in the project-root .env and is
-read by src/llm.py exactly as it was for the Streamlit app — this module only
-adds the settings the API boundary itself needs (CORS, upload limits, session
-lifetime).
+read by src/llm.py; this module only adds the settings the API boundary itself
+needs (CORS, upload limits, database URL).
 """
 
 import os

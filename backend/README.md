@@ -6,54 +6,54 @@ dataclass results into JSON.
 
 ## Run locally
 
-From the **repository root** (not this directory — the API imports the RAG core
-from `../src`, so the root is the import root):
+From the **repository root** — not this directory. The API imports the RAG core
+from `../src`, so the root is the import root:
 
 ```bash
-pip install -r requirements-dev.txt     # runtime deps + local extras
-cp .env.example .env                    # set GEMINI_API_KEY
+pip install -r requirements.txt
+cp .env.example .env            # set GEMINI_API_KEY
 uvicorn api.main:app --reload --port 8000 --app-dir backend
 ```
 
-With no `DATABASE_URL` set, the API uses in-memory storage — no database needed
-for local work.
+With no `DATABASE_URL` set the API uses in-memory storage, so no database is
+needed to work locally.
 
 ## Endpoints
 
 | Method | Path | Purpose |
 |---|---|---|
-| GET | `/health` | Readiness: embedding backend, LLM configured, storage reachable |
+| GET | `/health` | Readiness: embedding model, LLM configured, storage reachable |
 | POST | `/api/documents` | Upload + index a PDF/DOCX (multipart `file`); returns `session_id` |
-| GET | `/api/documents/{session_id}` | Fetch a session's document metadata |
+| GET | `/api/documents/{session_id}` | A session's document metadata |
 | POST | `/api/chat` | `{session_id, question, top_k?}` → answer + citations + retrieval detail |
-| POST | `/api/sessions/{session_id}/reset` | Clear conversation memory, keep the document |
+| POST | `/api/sessions/{session_id}/reset` | Clear the conversation, keep the document |
 | DELETE | `/api/sessions/{session_id}` | Drop a session |
 
 ## How state works
 
-A session is one indexed document plus its conversation. Neither is held in the
-process between requests — see `api/storage.py` for why. Each request rebuilds
-what it needs:
+A session is one indexed document plus its conversation. Neither is kept in the
+process between requests — a serverless instance cannot be assumed to still
+exist on the next one. Each request rebuilds what it needs:
 
 ```
 request -> touch session -> load document metadata
-        -> hydrate a VectorStore from stored chunks+vectors (LRU-cached)
+        -> rebuild a VectorStore from stored chunks + vectors (LRU-cached)
         -> load conversation turns
         -> answer -> append the new turns
 ```
 
-That is what makes the API safe to run on a platform where the next request may
-land on a different instance.
-
 | | `MemoryStorage` | `PostgresStorage` |
 |---|---|---|
 | Selected when | `DATABASE_URL` unset | `DATABASE_URL` set |
-| Used for | local dev, tests | deployment |
+| Used for | local development | deployment |
 | Survives restart | no | yes |
 
-Vectors are stored as raw `float32` bytes (exact round-trip, no text formatting
-in between) and chunk metadata as JSONB (the chunker's schema has grown across
-phases; one JSONB column means the next new field is not also a migration).
+Vectors are stored as raw `float32` bytes, so they round-trip exactly with no
+text formatting in between. Chunk metadata is stored as JSONB, because the
+chunker's fields have grown over time and a new field should not also be a
+database migration.
+
+> `PostgresStorage` has not yet been exercised against a live database.
 
 ## Environment
 
@@ -62,19 +62,7 @@ phases; one JSONB column means the next new field is not also a migration).
 | `GEMINI_API_KEY` | yes | — | Embeddings and generation |
 | `DATABASE_URL` | deployment | — | Postgres; unset = in-memory |
 | `ALLOWED_ORIGINS` | deployment | `localhost:3000` | CORS allowlist |
-| `EMBEDDING_BACKEND` | no | `gemini` | `gemini` (API) or `local` (sentence-transformers) |
-| `EMBEDDING_DIMENSION` | no | `768` | Gemini output dimensionality |
-| `EMBEDDING_RPM` | no | `90` | Client-side embed rate cap (free tier allows 100/min) |
-| `MAX_UPLOAD_BYTES` | no | `4194304` | Kept under Vercel's 4.5MB request-body limit |
+| `EMBEDDING_DIMENSION` | no | `768` | Embedding size |
+| `EMBEDDING_RPM` | no | `90` | Client-side rate cap (free tier allows 100/min) |
+| `MAX_UPLOAD_BYTES` | no | `4194304` | Under Vercel's 4.5MB request-body limit |
 | `LLM_PROVIDER` | no | `gemini` | See `src/llm.py` |
-
-## Test
-
-```bash
-cd backend && python -m pytest
-```
-
-Real embedding model, real retrieval, real evidence gate; only the LLM is faked
-(`tests/conftest.py`). Tests pin `EMBEDDING_BACKEND=local` so they stay
-hermetic, free and offline — the deployed embedding backend's *quality* is
-measured in `eval/`, which is where that belongs.

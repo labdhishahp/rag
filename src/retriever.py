@@ -2,7 +2,7 @@
 Retrieve the most relevant document chunks for a user question.
 
 Pipeline for one question:
-  question → embedding → FAISS search → top-k chunks with scores
+  question → embedding → vector search → top-k chunks with scores
 """
 
 from embeddings import EmbeddingModel

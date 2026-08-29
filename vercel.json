@@ -3,7 +3,7 @@
   "functions": {
     "backend/api/main.py": {
       "maxDuration": 120,
-      "excludeFiles": "{frontend/**,data/**,eval/**,scripts/**,tests/**,backend/tests/**,.venv/**,venv/**,**/__pycache__/**,**/*.pyc,.pytest_cache/**,.git/**,.devcontainer/**,app.py,TESTING.md,requirements-dev.txt}"
+      "excludeFiles": "{frontend/**,.venv/**,**/__pycache__/**,**/*.pyc,.git/**}"
     }
   }
 }

@@ -5,10 +5,10 @@ Conversation memory — what were we just talking about?
 THREE THINGS THAT ARE EASY TO CONFUSE
 ------------------------------------------------------------------------------
     conversation memory   "What were we discussing?"    lives here
-    document knowledge    "What does the file say?"     lives in FAISS
+    document knowledge    "What does the file say?"     lives in the vector store
     retrieved evidence    "What is relevant THIS turn?" rebuilt every turn
 
-Before Phase 4 the Streamlit app kept a list of past questions and answers
+An earlier version kept a list of past questions and answers
 and displayed them — but never passed them to retrieval or to the LLM. So
 "explain it in more detail" was embedded literally (near-noise similarity) and
 the model saw a question whose "it" referred to nothing.

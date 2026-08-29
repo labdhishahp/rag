@@ -62,7 +62,7 @@ class VectorStore:
 
     @property
     def ntotal(self) -> int:
-        """How many vectors are stored. (Was index.ntotal under FAISS.)"""
+        """How many vectors are stored."""
         return len(self.chunks)
 
     def add(self, embeddings: np.ndarray, chunks: list[dict]) -> None:

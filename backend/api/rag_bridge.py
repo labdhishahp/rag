@@ -1,19 +1,16 @@
 """
 The one file that knows both the API and the RAG core.
 
-Every other module in this package (routers, schemas) talks to session
-objects and plain JSON-safe dicts. This module is where that boundary is
-built: it puts src/ on sys.path exactly the way app.py and tests/conftest.py
-already do (no package restructuring of the RAG core), holds the process-wide
-singletons (embedding model, LLM client) the same way Streamlit's
-st.cache_resource did, and turns rag.py's dataclass-shaped results into JSON.
+Every other module in this package (routers, storage) talks to session objects
+and plain JSON-safe dicts. This module is where that boundary is built. It:
 
-Session store: an in-memory dict keyed by a server-issued session_id, because
-this API replaces Streamlit's per-browser-tab st.session_state with an
-explicit handle a stateless HTTP client can pass back on every request. One
-process, one dict — the same "one document at a time" model the Streamlit
-app used, just addressable over HTTP instead of implicit in a Streamlit
-session. No database: a TTL + max-session cap bounds memory instead.
+  * puts src/ on sys.path, so the RAG core is importable without restructuring
+    it into a package,
+  * holds the singletons worth building once per process (embedding model, LLM
+    client),
+  * assembles a session per request out of storage (see storage.py — nothing
+    about a session is kept in memory between requests),
+  * and turns rag.py's dataclass-shaped results into JSON the frontend renders.
 """
 
 import dataclasses
@@ -157,14 +154,14 @@ def serialize_answer_result(result: dict) -> dict:
     """
     RAGSystem.answer()'s result, as JSON the frontend can render directly.
 
-    Mirrors exactly what app.py's `_render_result_details` showed (sources,
-    matched vs. expanded chunks, evidence level, the evidence block verbatim)
-    so the new frontend can reproduce the same "what did retrieval do"
-    inspector without re-deriving anything the RAG core already computed.
+    Carries everything the "what did retrieval actually do" inspector shows:
+    sources, matched vs. expanded chunks, evidence level, and the evidence
+    block verbatim — so the frontend renders it without re-deriving anything
+    the RAG core already computed.
 
     Deliberately omits `result["chunks"]` (the raw pre-expansion similarity
-    hits) — the Streamlit UI never rendered them either; `passages` plus
-    entry/expanded/dropped chunk ids already cover the inspectable surface.
+    hits): `passages` plus the entry/expanded/dropped chunk ids already cover
+    the inspectable surface.
     """
     context = result["context"]
     return _sanitize(

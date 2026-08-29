@@ -6,7 +6,7 @@ WHY THIS MODULE EXISTS
 ------------------------------------------------------------------------------
 Step 2 originally inferred document structure from CHARACTER COUNTS: a line
 was "wrapped" if it was at least 75% as long as the widest line on the page.
-On real documents that failed hard (see scripts/validate_real_docs.py):
+On real documents that failed hard, measured across three research papers:
 
     two-column survey paper   779 "headings" on 21 pages   (true count ~30)
     section labels attached   'https://towardsdatascience.com/', 'preprint', 'L'

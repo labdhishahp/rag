@@ -1,18 +1,19 @@
 """
-Build a retriever from an uploaded document — shared by CLI and Streamlit app.
+Index an uploaded document: the whole ingestion half of the pipeline.
+
+    file bytes -> extract -> chunk -> embed -> vector store -> Retriever
 
 Input:  file bytes + filename (PDF or DOCX)
-Output: Retriever ready to search (+ document metadata for the UI)
+Output: a Retriever ready to search, plus document metadata for the UI
 """
 
 import hashlib
-from pathlib import Path
-from typing import Callable, Optional, Union
+from typing import Callable, Optional
 
 import fitz
 
 from chunker import chunk_pages
-from document_loader import load_document_from_bytes, load_pdf
+from document_loader import load_document_from_bytes
 from embeddings import EmbeddingModel
 from retriever import Retriever
 from vector_store import VectorStore
@@ -38,37 +39,6 @@ def make_document_id(file_bytes: bytes) -> str:
     holds, and short enough to read in debug output.
     """
     return hashlib.sha256(file_bytes).hexdigest()[:12]
-
-
-def build_retriever_from_pages(
-    pages: list[dict],
-    embedding_model: Optional[EmbeddingModel] = None,
-    chunk_size: int = DEFAULT_CHUNK_SIZE,
-    chunk_overlap: int = DEFAULT_CHUNK_OVERLAP,
-) -> Retriever:
-    """Turn extracted pages into a searchable Retriever."""
-    chunks = chunk_pages(
-        pages,
-        chunk_size=chunk_size,
-        chunk_overlap=chunk_overlap,
-    )
-
-    if embedding_model is None:
-        embedding_model = EmbeddingModel()
-
-    texts = [chunk["text"] for chunk in chunks]
-
-    try:
-        embeddings = embedding_model.embed_texts(texts)
-    except Exception as exc:
-        raise DocumentProcessingError(
-            "Failed to generate embeddings. See terminal logs for details."
-        ) from exc
-
-    store = VectorStore(dimension=embedding_model.dimension)
-    store.add(embeddings, chunks)
-
-    return Retriever(embedding_model, store)
 
 
 def _document_metadata(
@@ -98,7 +68,7 @@ def index_document_from_upload(
     on_step: Optional[Callable[[str], None]] = None,
 ) -> tuple[Retriever, dict]:
     """
-    Process an uploaded document once: extract → chunk → embed → FAISS.
+    Process an uploaded document once: extract → chunk → embed → index.
 
     on_step: optional callback for UI progress messages.
     Returns (retriever, metadata) for session storage.
@@ -153,9 +123,7 @@ def index_document_from_upload(
     except ValueError as exc:
         raise DocumentProcessingError(str(exc)) from exc
 
-    # Compact pipeline visibility: one line per chunk, not the full text.
-    # For the full text of every chunk, use scripts/baseline_retrieval.py
-    # or the "Chunks" viewer in the Streamlit UI.
+    # One line per chunk, not the full text, so the output stays readable.
     print("\n=== CHUNKING ===")
     print(f"document={filename} id={document_id}")
     print(f"pages={len(pages)} chunks={len(chunks)} "
@@ -219,59 +187,3 @@ def index_document_from_upload(
     metadata["embeddings"] = embeddings
 
     return retriever, metadata
-
-
-def build_retriever_from_pdf(
-    pdf_path: Union[str, Path],
-    embedding_model: Optional[EmbeddingModel] = None,
-    chunk_size: int = DEFAULT_CHUNK_SIZE,
-    chunk_overlap: int = DEFAULT_CHUNK_OVERLAP,
-) -> Retriever:
-    """Load a PDF from disk and build a Retriever (Phase 1 CLI)."""
-
-    pages = load_pdf(pdf_path)
-
-    return build_retriever_from_pages(
-        pages,
-        embedding_model=embedding_model,
-        chunk_size=chunk_size,
-        chunk_overlap=chunk_overlap,
-    )
-
-
-def index_document_from_bytes(
-    file_bytes: bytes,
-    filename: str = "uploaded.pdf",
-    embedding_model: Optional[EmbeddingModel] = None,
-    chunk_size: int = DEFAULT_CHUNK_SIZE,
-    chunk_overlap: int = DEFAULT_CHUNK_OVERLAP,
-) -> tuple[Retriever, dict]:
-    """Backward-compatible alias for index_document_from_upload."""
-
-    return index_document_from_upload(
-        file_bytes,
-        filename=filename,
-        embedding_model=embedding_model,
-        chunk_size=chunk_size,
-        chunk_overlap=chunk_overlap,
-    )
-
-
-def build_retriever_from_bytes(
-    file_bytes: bytes,
-    filename: str = "uploaded.pdf",
-    embedding_model: Optional[EmbeddingModel] = None,
-    chunk_size: int = DEFAULT_CHUNK_SIZE,
-    chunk_overlap: int = DEFAULT_CHUNK_OVERLAP,
-) -> Retriever:
-    """Load an uploaded file and build a Retriever (Phase 1 compatible)."""
-
-    retriever, _ = index_document_from_upload(
-        file_bytes,
-        filename=filename,
-        embedding_model=embedding_model,
-        chunk_size=chunk_size,
-        chunk_overlap=chunk_overlap,
-    )
-
-    return retriever

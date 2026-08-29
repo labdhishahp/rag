@@ -5,7 +5,7 @@ Run locally from backend/:
     uvicorn api.main:app --reload --port 8000
 
 The RAG core (embedding model, LLM client) is built once at startup and held
-on app.state — the API equivalent of Streamlit's @st.cache_resource. Sessions
+on app.state, because they are expensive to build and cheap to hold. Sessions
 (one indexed document + its conversation) are addressed by a server-issued
 session_id instead of a browser's session_state.
 """

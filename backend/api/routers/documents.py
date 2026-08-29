@@ -1,4 +1,4 @@
-"""Document upload and indexing — the API equivalent of app.py's sidebar uploader."""
+"""Upload a document and index it: the entry point of the ingestion pipeline."""
 
 import logging
 from pathlib import Path
