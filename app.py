@@ -1,11 +1,18 @@
 """
-RAG Document Chat — Streamlit frontend for Phase 2.
+Knowledge Assistant — Streamlit chat frontend.
 
 Run from project root:
     streamlit run app.py
 
-The app uses ONLY user-uploaded documents — no hardcoded sample.pdf.
-Document processing is delegated to src/pipeline.py; Q&A to src/rag.py.
+What this file does and does not do:
+  - Uploads documents and indexes them once (src/pipeline.py).
+  - Keeps a real Conversation (src/conversation.py) and passes it to the RAG
+    system on every turn, so follow-ups like "explain it in more detail" are
+    resolved for retrieval AND shown to the model.
+  - Renders answers with their sources and, for the curious, exactly what
+    retrieval did: the rewritten query, matched vs. surrounding chunks,
+    evidence level.
+  - Contains no retrieval or generation logic of its own.
 """
 
 import hashlib
@@ -18,62 +25,21 @@ import streamlit as st
 SRC_DIR = Path(__file__).resolve().parent / "src"
 sys.path.insert(0, str(SRC_DIR))
 
+from conversation import Conversation  # noqa: E402
 from embeddings import EmbeddingModel  # noqa: E402
 from llm import LLMError, create_llm  # noqa: E402
 from pipeline import DocumentProcessingError, index_document_from_upload  # noqa: E402
-from rag import DEFAULT_SIMILARITY_THRESHOLD, RAGSystem  # noqa: E402
+from rag import RAGSystem  # noqa: E402
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-TOP_K_OPTIONS = [1, 3, 5, 10]
+st.set_page_config(page_title="Knowledge Assistant", page_icon="📚", layout="wide")
 
-# UI state constants
-STATE_NO_DOCUMENT = "no_document"
-STATE_PROCESSING = "processing"
-STATE_READY = "ready"
-STATE_ANSWERING = "answering"
-STATE_ANSWER = "answer"
 
 # ---------------------------------------------------------------------------
-# Page config & header
+# Cached heavy resources
 # ---------------------------------------------------------------------------
-st.set_page_config(
-    page_title="RAG Document Chat",
-    page_icon="📄",
-    layout="wide",
-)
-
-_header_col, _chunks_col = st.columns([10, 2])
-with _header_col:
-    st.title("RAG Document Chat")
-    st.caption("Upload a document and ask questions about its contents.")
-with _chunks_col:
-    _chunks_btn_slot = st.empty()
-
-# ---------------------------------------------------------------------------
-# Sidebar
-# ---------------------------------------------------------------------------
-st.sidebar.header("Retrieval settings")
-top_k = st.sidebar.selectbox(
-    "Top K",
-    options=TOP_K_OPTIONS,
-    index=TOP_K_OPTIONS.index(3),
-    help="Number of document chunks retrieved for each question.",
-)
-similarity_threshold = st.sidebar.slider(
-    "Low-confidence threshold",
-    min_value=0.0,
-    max_value=1.0,
-    value=DEFAULT_SIMILARITY_THRESHOLD,
-    step=0.05,
-    help=(
-        "If the best retrieval score is below this, we warn that chunks may be "
-        "irrelevant. This is a heuristic — not a perfect missing-info detector."
-    ),
-)
-
-
 @st.cache_resource
 def get_embedding_model() -> EmbeddingModel:
     return EmbeddingModel()
@@ -87,391 +53,194 @@ def get_llm():
 # ---------------------------------------------------------------------------
 # Session state
 # ---------------------------------------------------------------------------
-def _init_session_state() -> None:
+def _init_state() -> None:
     defaults = {
         "retriever": None,
         "doc_metadata": None,
         "processed_file_hash": None,
-        "processing_error": None,
-        "chat_history": [],
-        "last_result": None,
-        "ui_state": STATE_NO_DOCUMENT,
+        "conversation": Conversation(),
+        "messages": [],          # [{"role", "content", "result"?}] for rendering
     }
     for key, value in defaults.items():
         if key not in st.session_state:
             st.session_state[key] = value
 
 
-_init_session_state()
+_init_state()
 
 
 def _file_hash(name: str, data: bytes) -> str:
     return hashlib.sha256(name.encode() + data).hexdigest()
 
 
-def _clear_document_state() -> None:
-    """Discard previous document index and Q&A history."""
+def _reset_for_new_document() -> None:
     st.session_state.retriever = None
     st.session_state.doc_metadata = None
     st.session_state.processed_file_hash = None
-    st.session_state.processing_error = None
-    st.session_state.chat_history = []
-    st.session_state.last_result = None
+    st.session_state.conversation = Conversation()
+    st.session_state.messages = []
 
 
-def _process_upload(uploaded_file) -> None:
-    """
-    Process uploaded file immediately when it changes.
-
-    Runs once per unique file (hash). Does NOT re-run on every question.
-    """
-    file_bytes = uploaded_file.getvalue()
-    file_id = _file_hash(uploaded_file.name, file_bytes)
-
-    if st.session_state.processed_file_hash == file_id:
-        if st.session_state.retriever is not None:
-            st.session_state.ui_state = STATE_READY
-        return
-
-    # New document — replace everything from the previous upload.
-    _clear_document_state()
-    st.session_state.ui_state = STATE_PROCESSING
-
-    progress = st.empty()
-    steps: list[str] = []
-
-    def on_step(message: str) -> None:
-        steps.append(message)
-        progress.info("⏳ Processing your document...\n\n" + "\n".join(f"- {s}" for s in steps))
-
-    try:
-        embedding_model = get_embedding_model()
-        retriever, metadata = index_document_from_upload(
-            file_bytes,
-            filename=uploaded_file.name,
-            embedding_model=embedding_model,
-            on_step=on_step,
-        )
-        st.session_state.retriever = retriever
-        st.session_state.doc_metadata = metadata
-        st.session_state.processed_file_hash = file_id
-        st.session_state.ui_state = STATE_READY
-        progress.empty()
-    except DocumentProcessingError as exc:
-        logger.exception("Document processing failed")
-        st.session_state.processing_error = str(exc)
-        st.session_state.ui_state = STATE_NO_DOCUMENT
-        progress.empty()
-        st.error(str(exc))
-    except Exception:
-        logger.exception("Unexpected document processing error")
-        st.session_state.processing_error = (
-            "Something went wrong while processing the document."
-        )
-        st.session_state.ui_state = STATE_NO_DOCUMENT
-        progress.empty()
-        st.error(
-            "Something went wrong while processing the document. "
-            "See terminal logs for details."
-        )
-
-
-def _render_upload_section() -> None:
-    st.subheader("Upload your document")
-    uploaded_file = st.file_uploader(
-        "Choose a PDF or Word document",
+# ---------------------------------------------------------------------------
+# Sidebar: document upload + settings + pipeline visibility
+# ---------------------------------------------------------------------------
+with st.sidebar:
+    st.header("Document")
+    uploaded = st.file_uploader(
+        "Upload a PDF or Word document",
         type=["pdf", "docx"],
-        help="Upload one document at a time. A new upload replaces the previous index.",
-        label_visibility="collapsed",
+        help="One document at a time for now. A new upload starts a new conversation.",
     )
 
-    if uploaded_file is not None:
-        _process_upload(uploaded_file)
+    if uploaded is not None:
+        data = uploaded.getvalue()
+        file_id = _file_hash(uploaded.name, data)
+        if st.session_state.processed_file_hash != file_id:
+            _reset_for_new_document()
+            steps: list[str] = []
+            progress = st.empty()
+
+            def on_step(message: str) -> None:
+                steps.append(message)
+                progress.info("\n".join(f"- {s}" for s in steps))
+
+            try:
+                retriever, metadata = index_document_from_upload(
+                    data, filename=uploaded.name,
+                    embedding_model=get_embedding_model(), on_step=on_step,
+                )
+                st.session_state.retriever = retriever
+                st.session_state.doc_metadata = metadata
+                st.session_state.processed_file_hash = file_id
+                progress.empty()
+            except DocumentProcessingError as exc:
+                progress.empty()
+                st.error(str(exc))
+            except Exception:  # noqa: BLE001
+                logger.exception("Unexpected document processing error")
+                progress.empty()
+                st.error("Something went wrong while processing the document. See terminal logs.")
 
     meta = st.session_state.doc_metadata
-    ui_state = st.session_state.ui_state
-
-    if ui_state == STATE_PROCESSING:
-        st.info("⏳ Processing your document...")
-    elif ui_state == STATE_READY and meta and st.session_state.retriever is not None:
-        st.success("✅ Document processed successfully")
+    if meta:
+        st.success("Indexed")
         st.markdown(
-            f"**File:** {meta['filename']}  \n"
-            f"**Pages:** {meta['page_count']}  \n"
-            f"**Chunks:** {meta['chunk_count']}  \n"
-            f"**Embedding dimension:** {meta['embedding_dimension']}  \n"
-            f"**Status:** Ready for questions"
-        )
-    elif st.session_state.processing_error:
-        st.warning("Upload a PDF or DOCX to begin.")
-    else:
-        st.info("Upload a PDF to begin.")
-
-
-def _render_answer(result: dict) -> None:
-    st.subheader("Answer")
-    st.markdown(result["answer"])
-
-    if result["low_confidence"]:
-        st.warning(
-            f"Retrieval confidence is low (best similarity: "
-            f"{result['best_similarity']:.3f}, threshold: {similarity_threshold:.2f}). "
-            "The retrieved passages may not contain the answer. "
-            "This threshold is a hint, not proof that information is absent."
+            f"**{meta['filename']}**  \n"
+            f"{meta['page_count']} {meta['page_label']}s · {meta['chunk_count']} chunks · "
+            f"{meta['embedding_dimension']}-d embeddings"
         )
 
-    st.subheader("Sources")
-    if result["chunks"]:
-        for i, chunk in enumerate(result["chunks"], start=1):
-            with st.expander(
-                f"Source {i} — Page {chunk['page_number']} — "
-                f"Similarity: {chunk['similarity']:.3f}",
-                expanded=False,
-            ):
-                st.caption(f"Chunk ID: {chunk['chunk_id']} | Rank: {chunk['rank']}")
-                st.markdown(f"_{chunk['text']}_")
-    else:
-        st.write("No sources retrieved.")
-
-    with st.expander("🔍 Retrieved Context", expanded=False):
-        for chunk in result["chunks"]:
-            st.markdown(
-                f"**Rank {chunk['rank']}** · Page {chunk['page_number']} · "
-                f"Chunk ID {chunk['chunk_id']} · Similarity {chunk['similarity']:.4f}"
-            )
-            st.text(chunk["text"])
-            st.divider()
-
-    with st.expander("How did RAG answer this?", expanded=False):
-        st.markdown(
-            """
-            ```
-            Your question
-                  ↓
-            Question embedding
-                  ↓
-            FAISS similarity search
-                  ↓
-            Top-k relevant chunks
-                  ↓
-            Prompt construction (DOCUMENT CONTEXT + USER QUESTION)
-                  ↓
-            LLM API
-                  ↓
-            Answer + source pages
-            ```
-            """
-        )
-        meta = st.session_state.doc_metadata or {}
-        st.markdown(
-            f"- **Top K used:** {result['top_k']}\n"
-            f"- **Chunks retrieved:** {result['num_retrieved_chunks']}\n"
-            f"- **Embedding dimension:** {result['embedding_dimension']}\n"
-            f"- **Source pages:** {', '.join(str(p) for p in result['sources']) or 'none'}\n"
-            f"- **Best similarity:** {result['best_similarity']:.4f}\n"
-            f"- **Document chunks indexed:** {meta.get('chunk_count', '—')}"
-        )
-
-
-def _render_question_section() -> None:
-    st.subheader("Ask a question about your document")
-
-    document_ready = (
-        st.session_state.ui_state == STATE_READY
-        and st.session_state.retriever is not None
+    st.divider()
+    st.header("Settings")
+    top_k_choice = st.selectbox(
+        "Matches to retrieve (top-k)",
+        options=["auto", 1, 3, 5, 10],
+        index=0,
+        help="'auto' lets the request decide: short factual questions fetch more matches, "
+             "detailed ones fetch fewer matches plus their neighbours.",
     )
+    show_debug = st.toggle("Show retrieval details under each answer", value=True)
 
-    if not document_ready:
-        st.text_input(
-            "Ask a question about your document...",
-            disabled=True,
-            placeholder="Upload and process a document first.",
-            key="question_disabled",
-        )
-        return
+    if st.button("New conversation", disabled=not st.session_state.messages):
+        st.session_state.conversation = Conversation()
+        st.session_state.messages = []
+        st.rerun()
 
-    question = st.text_input(
-        "Ask a question about your document...",
-        placeholder="e.g. What was the company's revenue in 2024?",
-        key="question_input",
-        label_visibility="collapsed",
-    )
 
-    ask_clicked = st.button("Ask", type="primary")
+# ---------------------------------------------------------------------------
+# Main: chat
+# ---------------------------------------------------------------------------
+st.title("Knowledge Assistant")
+st.caption("Ask about your document. Follow-ups like “explain that in more detail” are understood.")
 
-    if ask_clicked:
-        if not question.strip():
-            st.error("Please enter a question before clicking Ask.")
-            return
 
-        st.session_state.ui_state = STATE_ANSWERING
+def _render_result_details(result: dict) -> None:
+    """The inspectable pipeline: what retrieval did for this answer."""
+    with st.expander("Sources and retrieval details", expanded=False):
+        cited = set(result.get("cited_labels", []))
+        st.markdown("**Sources**")
+        for i, citation in enumerate(result["source_citations"], start=1):
+            mark = "✅" if i in cited else "▫️"
+            st.markdown(f"{mark} `[S{i}]` {citation}")
+        if not result["source_citations"]:
+            st.write("No passages retrieved.")
 
+        st.markdown("**Retrieval**")
+        lines = [
+            f"- Request read as: `{result['depth']}`"
+            + (" · asked for an example" if result["understanding"].wants_example else ""),
+        ]
+        if result.get("was_follow_up"):
+            lines.append(f"- Follow-up detected. Retrieval searched for: *{result['retrieval_query']}*")
+        lines += [
+            f"- Matched chunks: `{result['entry_chunk_ids']}` · added neighbours: `{result['expanded_chunk_ids']}`"
+            + (f" · dropped for budget: `{result['dropped_chunk_ids']}`" if result["dropped_chunk_ids"] else ""),
+            f"- Evidence level: `{result['evidence_level']}` (best similarity {result['best_similarity']:.3f})",
+            f"- Context sent: {result['context_chars']} chars in {len(result['context'].passages)} passage(s); "
+            f"overlap removed: {result['duplicate_chars_removed']} chars",
+            f"- LLM called: {'yes' if result['llm_called'] else 'no (declined on evidence)'}"
+            + (f" · model `{result['llm_model']}`" if result.get("llm_model") else ""),
+        ]
+        st.markdown("\n".join(lines))
+
+        with st.expander("Evidence passages exactly as sent to the model"):
+            st.text(result["context"].formatted)
+
+
+# Replay the conversation.
+for msg in st.session_state.messages:
+    with st.chat_message(msg["role"]):
+        st.markdown(msg["content"])
+        if msg["role"] == "assistant" and msg.get("result") is not None:
+            if msg["result"]["low_confidence"] and not msg["result"]["refused"]:
+                st.caption("⚠️ Low retrieval confidence — verify against the sources.")
+            if show_debug:
+                _render_result_details(msg["result"])
+
+document_ready = st.session_state.retriever is not None
+prompt = st.chat_input(
+    "Ask a question about your document…" if document_ready else "Upload a document to begin",
+    disabled=not document_ready,
+)
+
+if prompt:
+    st.session_state.messages.append({"role": "user", "content": prompt})
+    with st.chat_message("user"):
+        st.markdown(prompt)
+
+    with st.chat_message("assistant"):
         try:
             llm = get_llm()
         except ValueError as exc:
-            st.session_state.ui_state = STATE_READY
             st.error(str(exc))
-            return
-        except Exception:
-            logger.exception("LLM initialization failed")
-            st.session_state.ui_state = STATE_READY
-            st.error("Could not initialize the LLM. See terminal logs for details.")
-            return
+            st.stop()
 
         rag = RAGSystem(
             retriever=st.session_state.retriever,
             llm=llm,
-            top_k=top_k,
-            similarity_threshold=similarity_threshold,
-            embedding_dimension=st.session_state.doc_metadata.get("embedding_dimension"),
+            top_k=None if top_k_choice == "auto" else int(top_k_choice),
+            embedding_dimension=(st.session_state.doc_metadata or {}).get("embedding_dimension"),
+            debug=True,   # pipeline prints go to the terminal running streamlit
         )
-
-        with st.spinner("Searching document and generating answer..."):
+        with st.spinner("Retrieving evidence and writing the answer…"):
             try:
-                result = rag.answer(question.strip())
+                result = rag.answer(prompt, st.session_state.conversation)
             except ValueError as exc:
-                st.session_state.ui_state = STATE_READY
                 st.error(str(exc))
-                return
+                st.stop()
             except LLMError as exc:
-                st.session_state.ui_state = STATE_READY
                 st.error(str(exc))
-                return
-            except Exception:
+                st.stop()
+            except Exception:  # noqa: BLE001
                 logger.exception("RAG answer failed")
-                st.session_state.ui_state = STATE_READY
-                st.error(
-                    "Something went wrong while generating the answer. "
-                    "See terminal logs for details."
-                )
-                return
+                st.error("Something went wrong while generating the answer. See terminal logs.")
+                st.stop()
 
-        st.session_state.last_result = result
-        st.session_state.chat_history.append(
-            {
-                "question": result["question"],
-                "answer": result["answer"],
-                "sources": result["sources"],
-            }
-        )
-        st.session_state.ui_state = STATE_ANSWER
+        st.markdown(result["answer"])
+        if result["low_confidence"] and not result["refused"]:
+            st.caption("⚠️ Low retrieval confidence — verify against the sources.")
+        if show_debug:
+            _render_result_details(result)
 
-    if st.session_state.ui_state == STATE_ANSWERING:
-        st.info("Searching document and generating answer...")
-
-    if st.session_state.last_result and st.session_state.ui_state in (
-        STATE_ANSWER,
-        STATE_READY,
-    ):
-        _render_answer(st.session_state.last_result)
-
-
-@st.dialog("Document Chunks")
-def _show_chunks_dialog() -> None:
-    meta = st.session_state.doc_metadata
-    chunks = meta.get("chunks") if meta else None
-    if not chunks:
-        st.write("No document uploaded.")
-        return
-
-    for i, chunk in enumerate(chunks):
-        st.markdown(f"**Chunk {chunk['chunk_id']}**")
-        st.markdown(f"Page: {chunk['page_number']}")
-        st.markdown(f"Length: {len(chunk['text'])} characters")
-        st.markdown("")
-        st.text(chunk["text"])
-        if i < len(chunks) - 1:
-            st.divider()
-
-
-@st.dialog("Document Embeddings")
-def _show_embeddings_dialog() -> None:
-    meta = st.session_state.doc_metadata
-    chunks = meta.get("chunks") if meta else None
-    embeddings = meta.get("embeddings") if meta else None
-    if not chunks or embeddings is None:
-        st.write("No document uploaded.")
-        return
-
-    for i, chunk in enumerate(chunks):
-        vec = embeddings[i]
-        st.markdown(f"**Embedding {i}**")
-        st.markdown(f"Chunk ID: {chunk['chunk_id']}")
-        st.markdown(f"Page: {chunk['page_number']}")
-        st.markdown("")
-        st.markdown("Original text:")
-        st.text(chunk["text"])
-        st.markdown("")
-        st.markdown("Embedding:")
-        st.text(str(vec))
-        st.markdown(f"Shape: {vec.shape}")
-        st.markdown(f"Dimension: {vec.shape[0]}")
-        st.markdown(f"Data type: {vec.dtype}")
-        st.markdown(f"First 10 values: {vec[:10]}")
-        if i < len(chunks) - 1:
-            st.divider()
-
-
-def _render_chunks_button() -> None:
-    meta = st.session_state.doc_metadata
-    chunks = meta.get("chunks") if meta else None
-    embeddings = meta.get("embeddings") if meta else None
-    chunks_ready = st.session_state.retriever is not None and chunks
-    embeddings_ready = chunks_ready and embeddings is not None
-
-    # TEMPORARY DIAGNOSTIC — remove after debugging
-    _embeddings_shape = (
-        str(embeddings.shape) if hasattr(embeddings, "shape") else "N/A"
-    )
-    st.warning(
-        f"**Embeddings button diagnostic**\n\n"
-        f"Retriever exists: {'YES' if st.session_state.retriever is not None else 'NO'}\n\n"
-        f"doc_metadata exists: {'YES' if meta is not None else 'NO'}\n\n"
-        f"chunks exists: {'YES' if chunks is not None else 'NO'}\n"
-        f"chunks type: {type(chunks).__name__}\n"
-        f"chunks length: {len(chunks) if chunks is not None else 'N/A'}\n\n"
-        f"embeddings exists: {'YES' if embeddings is not None else 'NO'}\n"
-        f"embeddings type: {type(embeddings).__name__}\n"
-        f"embeddings length: {len(embeddings) if embeddings is not None else 'N/A'}\n"
-        f"embeddings shape: {_embeddings_shape}\n\n"
-        f"state/status: {st.session_state.ui_state}"
-    )
-
-    with _chunks_btn_slot.container():
-        btn_col1, btn_col2 = st.columns(2)
-        with btn_col1:
-            if st.button("Chunks", disabled=not chunks_ready, key="chunks_viewer_btn"):
-                _show_chunks_dialog()
-        with btn_col2:
-            if st.button(
-                "Embeddings", disabled=not embeddings_ready, key="embeddings_viewer_btn"
-            ):
-                _show_embeddings_dialog()
-
-
-def _render_chat_history() -> None:
-    if not st.session_state.chat_history:
-        return
-
-    st.subheader("Previous questions this session")
-    for i, entry in enumerate(reversed(st.session_state.chat_history), start=1):
-        label = entry["question"][:80] + ("..." if len(entry["question"]) > 80 else "")
-        with st.expander(
-            f"Q{len(st.session_state.chat_history) - i + 1}: {label}",
-            expanded=False,
-        ):
-            st.markdown(f"**Answer:** {entry['answer']}")
-            if entry["sources"]:
-                pages = ", ".join(f"Page {p}" for p in entry["sources"])
-                st.caption(f"Sources: {pages}")
-
-
-# ---------------------------------------------------------------------------
-# Layout
-# ---------------------------------------------------------------------------
-_render_upload_section()
-st.divider()
-_render_question_section()
-st.divider()
-_render_chat_history()
-_render_chunks_button()
+    RAGSystem.record_turn(st.session_state.conversation, result)
+    st.session_state.messages.append({"role": "assistant", "content": result["answer"], "result": result})

@@ -1,0 +1,268 @@
+{
+  "tag": "post-step5",
+  "rows": [
+    {
+      "id": "f01",
+      "doc": "data/formula_sample.pdf",
+      "type": "direct",
+      "answerable": true,
+      "depth": "brief",
+      "answer": "The compound interest formula is $A = P(1 + r/n)^{nt}$, where $P$ is the principal, $r$ is the annual nominal interest rate, $n$ is the number of times interest is compounded per year, $t$ is the total time in years, and $A$ is the final amount accumulated [S1].",
+      "answer_chars": 262,
+      "facts": [
+        "P(1 + r/n)"
+      ],
+      "facts_found": [
+        "P(1 + r/n)"
+      ],
+      "fact_coverage": 1.0,
+      "refused": false,
+      "correct_refusal": true,
+      "cited_labels": [
+        1
+      ],
+      "cited_any": true,
+      "n_passages": 2,
+      "context_chars": 1401,
+      "evidence_level": "ok",
+      "llm_called": true,
+      "elapsed_s": 10.407245875001536
+    },
+    {
+      "id": "f02",
+      "doc": "data/formula_sample.pdf",
+      "type": "detailed",
+      "answerable": true,
+      "depth": "detailed",
+      "answer": "### The Formula\nThe compound interest formula is [S1]:\n$$A = P\\left(1 + \\frac{r}{n}\\right)^{nt}$$\n\n### Definitions\nThe variables in the formula are defined as follows [S1]:\n* **$P$**: The principal, meaning the initial amount of money invested or borrowed.\n* **$r$**: The annual nominal interest rate, expressed as a decimal.\n* **$n$**: The number of times interest is compounded per year.\n* **$t$**: The total time the money is invested or borrowed, measured in years.\n* **$A$**: The final amount accumulated after $t$ years, including all interest.\n\n### What it Means\nCompound interest is one of the most important concepts in finance [S1]. Unlike simple interest, which is calculated only on the original principal, compound interest is calculated on the principal plus all previously accumulated interest [S1]. \n\n### How it Works\nInterest is added to the principal at the end of every compounding period [S1]. Once added, that interest itself begins earning interest in each later period [S1]. This is the reason growth is exponential rather than linear [S1]. \n\n### Caveats\nIncreasing $n$ makes compounding more frequent, which raises the final amount $A$, although the benefit shows diminishing returns as $n$ becomes large [S1]. For the same principal, rate, and duration, simple interest always produces a smaller final amount than compound interest [S2].\n\n### Worked Example\nSuppose $P = 1000$, $r = 0.05$, $n = 12$, and $t = 10$ [S1]. Substituting these values into the formula gives [S1]:\n$$A = 1000\\left(1 + \\frac{0.05}{12}\\right)^{120}$$\n\nThis evaluates to approximately $1647.01$ [S1]. The total interest earned over the ten years is therefore about $647.01$ [S1].",
+      "answer_chars": 1677,
+      "facts": [
+        "P(1 + r/n)",
+        "1647",
+        "exponential"
+      ],
+      "facts_found": [
+        "1647",
+        "exponential"
+      ],
+      "fact_coverage": 0.6666666666666666,
+      "refused": false,
+      "correct_refusal": true,
+      "cited_labels": [
+        1,
+        2
+      ],
+      "cited_any": true,
+      "n_passages": 2,
+      "context_chars": 1913,
+      "evidence_level": "ok",
+      "llm_called": true,
+      "elapsed_s": 15.793285916995956
+    },
+    {
+      "id": "f03",
+      "doc": "data/formula_sample.pdf",
+      "type": "direct",
+      "answerable": true,
+      "depth": "normal",
+      "answer": "In the compound interest formula, the variables are defined as follows:\n\n* **P**: the principal, meaning the initial amount of money invested or borrowed [S1].\n* **r**: the annual nominal interest rate, expressed as a decimal [S1].\n* **n**: the number of times interest is compounded per year [S1].\n* **t**: the total time the money is invested or borrowed, measured in years [S1].\n* **A**: the final amount accumulated after $t$ years, including all interest [S1].",
+      "answer_chars": 465,
+      "facts": [
+        "principal",
+        "compounded",
+        "decimal"
+      ],
+      "facts_found": [
+        "principal",
+        "compounded",
+        "decimal"
+      ],
+      "fact_coverage": 1.0,
+      "refused": false,
+      "correct_refusal": true,
+      "cited_labels": [
+        1
+      ],
+      "cited_any": true,
+      "n_passages": 2,
+      "context_chars": 1913,
+      "evidence_level": "ok",
+      "llm_called": true,
+      "elapsed_s": 6.559872041005292
+    },
+    {
+      "id": "f04",
+      "doc": "data/formula_sample.pdf",
+      "type": "example",
+      "answerable": true,
+      "depth": "normal",
+      "answer": "An example of compound interest is as follows: suppose the principal $P = 1000$, the annual nominal interest rate $r = 0.05$, the number of times interest is compounded per year $n = 12$, and the total time in years $t = 10$ [S1]. \n\nSubstituting these values into the compound interest formula, $A = P(1 + r/n)^{nt}$, gives:\n$$A = 1000(1 + 0.05/12)^{120}$$\nThis evaluates to approximately 1647.01, meaning the total interest earned over the ten years is about 647.01 [S1]. \n\nIn this formula, interest is added to the principal at the end of every compounding period, and once added, that interest itself begins earning interest in subsequent periods, resulting in exponential growth [S1].",
+      "answer_chars": 688,
+      "facts": [
+        "1647",
+        "1000"
+      ],
+      "facts_found": [
+        "1647",
+        "1000"
+      ],
+      "fact_coverage": 1.0,
+      "refused": false,
+      "correct_refusal": true,
+      "cited_labels": [
+        1
+      ],
+      "cited_any": true,
+      "n_passages": 2,
+      "context_chars": 1913,
+      "evidence_level": "ok",
+      "llm_called": true,
+      "elapsed_s": 12.5354379999917
+    },
+    {
+      "id": "f05",
+      "doc": "data/formula_sample.pdf",
+      "type": "direct",
+      "answerable": true,
+      "depth": "brief",
+      "answer": "The present value formula is:\n$$PV = FV / (1 + r)^n$$\nwhere PV is the present value, FV is the future value, r is the discount rate per period, and n is the number of periods [S3].",
+      "answer_chars": 180,
+      "facts": [
+        "FV / (1 + r)"
+      ],
+      "facts_found": [
+        "FV / (1 + r)"
+      ],
+      "fact_coverage": 1.0,
+      "refused": false,
+      "correct_refusal": true,
+      "cited_labels": [
+        3
+      ],
+      "cited_any": true,
+      "n_passages": 3,
+      "context_chars": 1389,
+      "evidence_level": "ok",
+      "llm_called": true,
+      "elapsed_s": 11.81515500000387
+    },
+    {
+      "id": "f06",
+      "doc": "data/formula_sample.pdf",
+      "type": "direct",
+      "answerable": true,
+      "depth": "normal",
+      "answer": "Diversification cannot remove market-wide risk [S3]. This is because systematic risk affects all assets simultaneously, and therefore it cannot be eliminated by holding more of them [S3].",
+      "answer_chars": 187,
+      "facts": [
+        "systematic"
+      ],
+      "facts_found": [
+        "systematic"
+      ],
+      "fact_coverage": 1.0,
+      "refused": false,
+      "correct_refusal": true,
+      "cited_labels": [
+        3
+      ],
+      "cited_any": true,
+      "n_passages": 3,
+      "context_chars": 2080,
+      "evidence_level": "ok",
+      "llm_called": true,
+      "elapsed_s": 13.894779583002673
+    },
+    {
+      "id": "f07",
+      "doc": "data/formula_sample.pdf",
+      "type": "absent",
+      "answerable": false,
+      "depth": "brief",
+      "answer": "I couldn't find enough information in the provided documents to answer that reliably.",
+      "answer_chars": 85,
+      "facts": [],
+      "facts_found": [],
+      "fact_coverage": null,
+      "refused": true,
+      "correct_refusal": true,
+      "cited_labels": [],
+      "cited_any": false,
+      "n_passages": 2,
+      "context_chars": 1371,
+      "evidence_level": "none",
+      "llm_called": false,
+      "elapsed_s": 0.0469592090084916
+    },
+    {
+      "id": "f08",
+      "doc": "data/formula_sample.pdf",
+      "type": "absent",
+      "answerable": false,
+      "depth": "brief",
+      "answer": "I couldn't find enough information in the provided documents to answer that reliably.",
+      "answer_chars": 85,
+      "facts": [],
+      "facts_found": [],
+      "fact_coverage": null,
+      "refused": true,
+      "correct_refusal": true,
+      "cited_labels": [],
+      "cited_any": false,
+      "n_passages": 3,
+      "context_chars": 1386,
+      "evidence_level": "none",
+      "llm_called": false,
+      "elapsed_s": 0.03406754200113937
+    },
+    {
+      "id": "a01",
+      "doc": "data/sample.pdf",
+      "type": "direct",
+      "answerable": true,
+      "depth": "brief",
+      "answer": "I couldn't find enough information in the provided documents to answer that reliably. The available evidence only details Acme's 2024 research and development spending, customer growth, and projected revenue growth for 2025 [S1, S2, S3].",
+      "answer_chars": 237,
+      "facts": [
+        "127.4"
+      ],
+      "facts_found": [],
+      "fact_coverage": 0.0,
+      "refused": true,
+      "correct_refusal": false,
+      "cited_labels": [],
+      "cited_any": false,
+      "n_passages": 3,
+      "context_chars": 633,
+      "evidence_level": "ok",
+      "llm_called": true,
+      "elapsed_s": 11.154317084001377
+    }
+  ],
+  "summary": {
+    "n_answerable": 7,
+    "n_absent": 2,
+    "fact_coverage": 0.8095238095238094,
+    "full_fact_coverage_rate": 0.7142857142857143,
+    "false_refusals": 1,
+    "false_answers": 0,
+    "cited_any_rate": 1.0,
+    "gate_skipped_llm": 2,
+    "answer_chars_by_depth": {
+      "brief": {
+        "n": 2,
+        "mean_chars": 221.0
+      },
+      "normal": {
+        "n": 3,
+        "mean_chars": 446.6666666666667
+      },
+      "detailed": {
+        "n": 1,
+        "mean_chars": 1677.0
+      }
+    },
+    "mean_elapsed_s": 9.137902250112448
+  },
+  "llm_calls": 23
+}

@@ -12,56 +12,115 @@ Why give retrieved chunks as "context"?
 
 Why separate DOCUMENT CONTEXT and USER QUESTION?
   Clear boundaries help the model know what is evidence vs what it must answer.
-  Mixing them makes it easier for the model to confuse the question with facts
-  or to treat its own assumptions as document content.
+
+------------------------------------------------------------------------------
+WHAT CHANGED IN PHASE 3, AND WHY
+------------------------------------------------------------------------------
+The previous prompt had one fixed rule: "Answer the question directly and
+concisely." Measured effect: asked to explain the compound interest formula in
+detail, with the worked example ALREADY IN THE CONTEXT, the model left the
+example out. Retrieval had done its job; the instruction told the model to stop
+early. It also forbade mentioning "the document", which made citations
+impossible.
+
+Now the prompt is assembled from the user's request:
+
+  depth        brief / normal / detailed  ->  how much to say, and whether to
+                                              actively pull in definitions,
+                                              mechanisms and worked examples
+                                              that are present in the evidence
+  citations    every passage is labelled [S1], [S2]... and the model is asked
+               to cite them inline. Citations are checked afterwards against
+               the labels that actually exist.
+  evidence     weak evidence -> an explicit caution; no evidence never reaches
+               the LLM at all (rag.py declines deterministically).
 """
 
-from typing import List
+REFUSAL_TEXT = (
+    "I couldn't find enough information in the provided documents to answer that reliably."
+)
+
+_DEPTH_INSTRUCTIONS = {
+    "brief": (
+        "The user wants a SHORT answer. Give the direct answer in one or two sentences "
+        "(or the bare formula/value if that is what was asked). Do not add explanation, "
+        "background, or examples unless the question cannot be answered without them."
+    ),
+    "normal": (
+        "Answer the question directly, then add the explanation needed to understand the "
+        "answer. Use the evidence's own definitions where they exist. Keep it focused."
+    ),
+    "detailed": (
+        "The user wants a DETAILED explanation. Use ALL relevant evidence provided. If the "
+        "evidence contains definitions of terms or variables, the mechanism of how something "
+        "works, assumptions, or a worked example, INCLUDE them — do not summarise them away. "
+        "Structure the answer with short headings such as: the answer/formula itself, what it "
+        "means, definitions, how it works, example, caveats — using only the parts the "
+        "evidence supports."
+    ),
+}
+
+_EXAMPLE_INSTRUCTION = (
+    "The user asked for an example. If the evidence contains a worked example, reproduce it "
+    "with its numbers. If it does not, say so explicitly rather than inventing one."
+)
+
+_WEAK_EVIDENCE_NOTE = (
+    "CAUTION: retrieval confidence is low; the passages below may not contain the answer. "
+    "If they do not directly answer the question, say so instead of guessing."
+)
 
 
-def format_context(chunks: list[dict]) -> str:
-    """Format retrieved chunks into a readable context block."""
-    if not chunks:
-        return "(No document passages were retrieved.)"
-
-    parts: List[str] = []
-    for chunk in chunks:
-        header = f"[Page {chunk['page_number']} | similarity {chunk['similarity']:.3f}]"
-        parts.append(f"{header}\n{chunk['text']}")
-    return "\n\n".join(parts)
+_CONVERSATION_RULE = (
+    "7. The CONVERSATION SO FAR is there so you can resolve references like \"it\", \"that\" or "
+    "\"the previous one\" in the user's latest message. It is NOT evidence: never cite it and "
+    "never treat something the assistant said earlier as a fact from the documents."
+)
 
 
 def build_rag_prompt(
     question: str,
-    chunks: list[dict],
+    context: str,
     low_confidence: bool = False,
+    depth: str = "normal",
+    wants_example: bool = False,
+    conversation: str | None = None,
 ) -> str:
     """
     Build the full prompt for the LLM.
 
-    Input:  user question + retrieved chunks (+ optional low-confidence flag)
+    Input:  user question, formatted evidence block ([S#]-labelled passages),
+            low-confidence flag, requested depth, example flag, and — for
+            follow-up turns — the recent conversation as plain text
     Output: single string prompt
+
+    Conversation and evidence are separate blocks on purpose. The model needs
+    the conversation to know what "it" means; it must not mistake the
+    conversation for a source. See conversation.py.
     """
-    context = format_context(chunks)
+    depth_instruction = _DEPTH_INSTRUCTIONS.get(depth, _DEPTH_INSTRUCTIONS["normal"])
+    example_note = f"\n{_EXAMPLE_INSTRUCTION}\n" if wants_example else ""
+    confidence_note = f"\n{_WEAK_EVIDENCE_NOTE}\n" if low_confidence else ""
+    conversation_rule = f"\n{_CONVERSATION_RULE}" if conversation else ""
+    conversation_block = (
+        f"\nCONVERSATION SO FAR (for reference resolution only, not evidence):\n{conversation}\n"
+        if conversation
+        else ""
+    )
 
-    confidence_note = ""
-    if low_confidence:
-        confidence_note = (
-            "\nIMPORTANT: The retrieved passages may NOT be relevant to this question "
-            "(similarity scores were low). If the context does not contain the answer, "
-            "you MUST say the information is not available in the document.\n"
-        )
-
-    return f"""You are a document Q&A assistant. Answer the user's question using ONLY the document context below.
+    return f"""You are a knowledge assistant answering questions about the user's documents. Answer using ONLY the evidence passages below.
 
 Rules:
-1. Use ONLY facts from the DOCUMENT CONTEXT. Do not use outside knowledge.
-2. If the answer is not in the DOCUMENT CONTEXT, say clearly: "This information is not available in the document."
-3. Do not invent or guess numbers, names, dates, or facts.
-4. Answer the question directly and concisely.
-5. Do not mention "the context" or "the document" unless explaining missing information.
-{confidence_note}
-DOCUMENT CONTEXT:
+1. Use ONLY facts from the EVIDENCE. Do not use outside knowledge and do not fill gaps with assumptions.
+2. If the evidence does not contain the answer, reply exactly: "{REFUSAL_TEXT}" You may add one sentence saying what the evidence does cover, if that is useful.
+3. Never invent or guess numbers, names, dates, formulas, or facts. If a detail is not in the evidence, leave it out rather than approximate it.
+4. Cite your sources inline using the passage labels, e.g. "...compounded monthly [S2]." Cite the passage a fact actually came from. Use only labels that appear below.
+5. Passages marked (matched) are the ones retrieval matched to the question; passages marked (surrounding context) are their neighbours in the document, included because they often hold the definitions or examples that go with a match.
+6. Do not describe the passages or narrate what you are doing ("the context says..."). Just answer, with citations.{conversation_rule}
+
+Answer style: {depth_instruction}
+{example_note}{confidence_note}{conversation_block}
+EVIDENCE:
 {context}
 
 USER QUESTION:

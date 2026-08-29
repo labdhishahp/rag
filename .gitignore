@@ -1,6 +1,18 @@
+.venv/
 venv/
 __pycache__/
 *.pyc
 .DS_Store
 *.egg-info/
+
+# Secrets — never commit. .env holds the real API key; .env.example holds only
+# the variable name with a placeholder value.
 .env
+.env.*
+!.env.example
+
+# Real-document validation corpus: fetched by scripts/fetch_real_docs.py, never committed
+data/real/
+
+# pytest
+.pytest_cache/
