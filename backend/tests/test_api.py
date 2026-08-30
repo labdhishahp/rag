@@ -258,3 +258,33 @@ def test_stored_vectors_round_trip_exactly(client, formula_pdf_bytes, app):
     # Chunk metadata must survive the JSON round trip intact — expansion depends
     # on prev/next links and section labels being exactly what the chunker set.
     assert {"chunk_id", "text", "section", "prev_chunk_id", "next_chunk_id"} <= set(chunks[0])
+
+
+# ---- connection-string handling (no database required) ----------------------
+
+def test_supabase_pooler_query_parameters_are_stripped():
+    """
+    Supabase's transaction-pooler URI carries `?pgbouncer=true`, a hint meant
+    for Prisma. libpq rejects any query parameter it does not recognise, so
+    connecting with the string Supabase hands you fails outright with
+    `invalid URI query parameter: "pgbouncer"`. Copying that string should just
+    work, so the parameter is dropped rather than pushed onto the user.
+    """
+    from api.storage import _clean_dsn
+
+    dsn, dropped = _clean_dsn(
+        "postgresql://u:p@aws-0-x.pooler.supabase.com:6543/postgres?pgbouncer=true"
+    )
+    assert dropped == ["pgbouncer"]
+    assert "pgbouncer" not in dsn
+    assert dsn.endswith("/postgres")
+
+    # Real libpq parameters must survive untouched.
+    dsn, dropped = _clean_dsn("postgresql://u:p@h:6543/postgres?sslmode=require")
+    assert dropped == [] and "sslmode=require" in dsn
+
+    # A plain URI is returned unchanged.
+    assert _clean_dsn("postgresql://u:p@h:5432/postgres") == (
+        "postgresql://u:p@h:5432/postgres",
+        [],
+    )

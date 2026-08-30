@@ -6,6 +6,7 @@ from pathlib import Path
 from fastapi import APIRouter, File, HTTPException, Request, UploadFile
 
 from ..config import settings
+from ..security import AUTH, UPLOAD_LIMIT
 from ..rag_bridge import (
     DocumentProcessingError,
     EmbeddingError,
@@ -19,7 +20,7 @@ router = APIRouter(tags=["documents"])
 ALLOWED_EXTENSIONS = {".pdf", ".docx"}
 
 
-@router.post("/api/documents")
+@router.post("/api/documents", dependencies=[AUTH, UPLOAD_LIMIT])
 async def upload_document(request: Request, file: UploadFile = File(...)):
     filename = file.filename or "uploaded"
     extension = Path(filename).suffix.lower()
@@ -84,7 +85,7 @@ async def upload_document(request: Request, file: UploadFile = File(...)):
     return {"session_id": session_id, "document": document}
 
 
-@router.get("/api/documents/{session_id}")
+@router.get("/api/documents/{session_id}", dependencies=[AUTH])
 def get_document(session_id: str, request: Request):
     state = request.app.state.rag_state
     session = state.load_session(session_id)

@@ -105,20 +105,42 @@ else needs installing to try it locally.
 | `EMBEDDING_DIMENSION` | no | `768` | Gemini fallback output size |
 | `EMBEDDING_RPM` | no | `90` | Gemini rate cap (free tier allows 100/min) |
 | `MAX_UPLOAD_BYTES` | no | `4194304` | Kept under Vercel's 4.5MB request limit |
-| `NEXT_PUBLIC_API_URL` | frontend | `localhost:8000` | Backend URL, read at **build** time |
+| `API_KEY` | **yes on Vercel** | — | Shared secret required in `X-API-Key` |
+| `RATE_LIMIT_QUESTIONS` | no | `20` | Per client, per window |
+| `RATE_LIMIT_UPLOADS` | no | `10` | Per client, per window |
+| `RATE_LIMIT_WINDOW_SECONDS` | no | `3600` | Rolling window |
+| `BACKEND_URL` | frontend | `localhost:8000` | Python API, read at **request** time |
+| `BACKEND_API_KEY` | frontend | — | Must match `API_KEY`; server-side only |
 
 ## Deployment
 
 Two Vercel projects from this one repository:
 
-- **frontend** — root directory `frontend/`. Set `NEXT_PUBLIC_API_URL` before
-  building; it is compiled into the bundle, so changing it needs a redeploy.
+- **frontend** — root directory `frontend/`. Set `BACKEND_URL` and
+  `BACKEND_API_KEY`. Neither has a `NEXT_PUBLIC_` prefix, so neither reaches
+  the browser, and both are read per request rather than baked in at build time.
 - **backend** — root directory the repository root (`vercel.json` and
   `pyproject.toml` point at `backend/api/main.py`). It must be the root because
   the API imports the RAG core from `src/`.
 
 The backend needs a Postgres database (`DATABASE_URL`) to keep documents and
 conversations across invocations, since serverless instances do not persist.
+Use Supabase's transaction pooler (port 6543).
+
+### How the API is protected
+
+The browser never talks to Python directly. It calls this app's own
+`/api/[...path]` route handler, which runs server-side, attaches the API key
+and forwards the request. That keeps the key out of the JS bundle — anything
+the browser holds is readable — and makes the browser's requests same-origin,
+so CORS never enters the picture. `ALLOWED_ORIGINS` therefore only governs
+direct (non-browser) access, and the app refuses to boot on Vercel with a
+wildcard origin or a missing `API_KEY`.
+
+Rate limits are counted in Postgres rather than in memory: a serverless
+deployment runs many instances, and a per-instance counter would allow the
+limit once per instance. Uploads and questions have separate budgets because
+they exhaust different quotas.
 
 Two known limits: uploads are capped at 4.5MB by the platform, and the Gemini
 free tier allows 20 generations/day per model. Embeddings now go to Hugging

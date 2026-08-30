@@ -58,6 +58,26 @@ def pytest_configure(config):
 
 @pytest.fixture(scope="session")
 def app():
+    """
+    The API wired to in-memory storage with the rate limiter switched off.
+
+    Both are deliberate. A configured DATABASE_URL would otherwise point these
+    tests at the real database — slow, order-dependent, and writing rows into
+    somewhere that is not a test fixture. And the limiter counts every caller
+    as one client (they all share the TestClient's address), so leaving it on
+    would make a long suite start returning 429 partway through, for reasons
+    that have nothing to do with what is being tested.
+
+    test_postgres_storage.py talks to the real database on purpose, and
+    test_security.py switches the limits back on for the tests that need them.
+    """
+    from api.config import settings
+
+    settings.database_url = None
+    settings.api_key = None
+    settings.rate_limit_questions = 0
+    settings.rate_limit_uploads = 0
+
     application = create_app()
     with TestClient(application):
         yield application
