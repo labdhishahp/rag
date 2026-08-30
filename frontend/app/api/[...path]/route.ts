@@ -40,6 +40,20 @@ function clientAddress(request: NextRequest): string {
 }
 
 async function proxy(request: NextRequest, path: string[]) {
+  // A request for /api/api/... means the caller prefixed "/api" onto a path
+  // that already had one. Forwarding it produces a 404 from Python that looks
+  // like a missing document rather than a client bug, so name it here instead.
+  if (path[0] === "api") {
+    return Response.json(
+      {
+        detail:
+          `Bad request path /api/${path.join("/")}: the "/api" prefix is added once by ` +
+          `lib/api.ts. Request "/${path.slice(1).join("/")}" instead.`,
+      },
+      { status: 400 },
+    );
+  }
+
   const search = request.nextUrl.search;
   // /health is the one backend route that does not live under /api — it is
   // unauthenticated on purpose so uptime monitoring can reach it.

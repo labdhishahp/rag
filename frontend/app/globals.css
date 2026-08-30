@@ -460,3 +460,186 @@ code {
     border-bottom: 1px solid var(--border);
   }
 }
+
+/* ------------------------------------------------------- RAG inspector */
+
+.chat-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.inspector-buttons {
+  display: flex;
+  gap: 0.5rem;
+  flex-shrink: 0;
+}
+
+.inspector-buttons button {
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--foreground);
+  border-radius: 6px;
+  padding: 0.35rem 0.75rem;
+  font-size: 0.85rem;
+}
+
+.inspector-buttons button:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.inspector-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgb(0 0 0 / 45%);
+  display: flex;
+  justify-content: flex-end;
+  z-index: 50;
+}
+
+.inspector {
+  background: var(--background);
+  width: min(680px, 100%);
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  border-left: 1px solid var(--border);
+}
+
+.inspector-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.85rem 1rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.inspector-tabs {
+  display: flex;
+  gap: 0.4rem;
+}
+
+.tab {
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--muted);
+  border-radius: 6px;
+  padding: 0.35rem 0.9rem;
+  font-size: 0.9rem;
+}
+
+.tab.active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-contrast);
+}
+
+.inspector-close {
+  background: none;
+  border: none;
+  color: var(--muted);
+  font-size: 1.5rem;
+  line-height: 1;
+  padding: 0 0.25rem;
+}
+
+.inspector-meta {
+  padding: 0.6rem 1rem;
+  font-size: 0.82rem;
+  color: var(--muted);
+  border-bottom: 1px solid var(--border);
+}
+
+.inspector-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+}
+
+.inspector-error {
+  color: var(--danger-text);
+  font-size: 0.85rem;
+}
+
+.chunk-card {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0.75rem 0.9rem;
+  background: var(--surface);
+}
+
+.chunk-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 0.5rem;
+  font-size: 0.78rem;
+}
+
+.chunk-id {
+  font-family: var(--font-geist-mono, ui-monospace, monospace);
+  font-weight: 600;
+  color: var(--accent);
+}
+
+.chunk-where {
+  color: var(--muted);
+  text-align: right;
+}
+
+.chunk-text {
+  white-space: pre-wrap;
+  font-size: 0.85rem;
+  line-height: 1.5;
+}
+
+.chunk-foot {
+  margin-top: 0.5rem;
+  font-size: 0.72rem;
+  color: var(--muted);
+}
+
+/* The source text of a vector, shown directly above it so the pairing reads
+   as one unit rather than two lists that happen to be adjacent. */
+.embedding-source {
+  padding-bottom: 0.6rem;
+  border-bottom: 1px dashed var(--border);
+}
+
+.vector-block {
+  margin-top: 0.6rem;
+}
+
+.vector-label {
+  font-size: 0.72rem;
+  color: var(--muted);
+  margin-bottom: 0.3rem;
+}
+
+.vector-values {
+  display: block;
+  font-size: 0.72rem;
+  line-height: 1.5;
+  background: var(--background);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0.5rem;
+  max-height: 220px;
+  overflow-y: auto;
+  word-break: break-all;
+}
+
+.vector-actions {
+  margin-top: 0.4rem;
+}
+
+@media (max-width: 720px) {
+  .chat-header {
+    flex-direction: column;
+  }
+}

@@ -8,6 +8,10 @@ export interface DocumentMetadata {
   page_label: string;
   page_count: number;
   chunk_count: number;
+  /** Which embedding space this document's vectors live in. Recorded at index
+   *  time and used for every later query — see src/embeddings.py. */
+  embedding_provider: string | null;
+  embedding_model: string | null;
   embedding_dimension: number;
   status: string;
 }
@@ -77,4 +81,37 @@ export interface ChatMessage {
   role: "user" | "assistant" | "error";
   content: string;
   result?: ChatResponse;
+}
+
+// ---- RAG inspection --------------------------------------------------------
+// What the document actually became: the stored chunks and their vectors,
+// read back from the database rather than recomputed.
+
+export interface StoredChunk {
+  chunk_id: number;
+  page_number: number | null;
+  page_label: string;
+  section: string | null;
+  text: string;
+  char_start: number | null;
+  char_end: number | null;
+  prev_chunk_id: number | null;
+  next_chunk_id: number | null;
+  /** The first few values of the vector; the rest is fetched on expand. */
+  embedding_preview: number[];
+  embedding_norm: number | null;
+}
+
+export interface ChunksResponse {
+  document: DocumentMetadata;
+  preview_values: number;
+  chunks: StoredChunk[];
+}
+
+export interface ChunkEmbedding {
+  chunk_id: number;
+  dimension: number;
+  model: string | null;
+  provider: string | null;
+  values: number[];
 }
