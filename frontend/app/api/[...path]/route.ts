@@ -19,7 +19,21 @@
 
 import { NextRequest } from "next/server";
 
-const BACKEND_URL = (process.env.BACKEND_URL ?? "http://localhost:8000").replace(/\/$/, "");
+// Deployed: API_INTERNAL_URL is injected by the Vercel service binding declared
+// in vercel.json. The FastAPI service has NO public rewrite, so that binding is
+// the only way to reach it — the browser cannot call it even if it wants to.
+// Internal calls skip the public request pipeline entirely.
+//
+// Locally there is no binding, so fall back to the address uvicorn is serving on.
+const BACKEND_URL = (
+  process.env.API_INTERNAL_URL ?? process.env.BACKEND_URL ?? "http://localhost:8000"
+).replace(/\/$/, "");
+
+// Kept even though the service is already unreachable from the internet. The
+// binding grants access but does not authenticate, so this stays as the second
+// layer: if a public rewrite to the api service were ever added by mistake, the
+// key still holds the line. It is server-side in both services and never
+// reaches a browser.
 const BACKEND_API_KEY = process.env.BACKEND_API_KEY ?? "";
 
 // Headers that belong to the browser's connection to Next.js and would be

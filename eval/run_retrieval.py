@@ -31,7 +31,7 @@ from collections import defaultdict
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(PROJECT_ROOT / "src"))
+sys.path.insert(0, str(PROJECT_ROOT / "backend" / "src"))
 
 from chunker import chunk_pages  # noqa: E402
 from context_builder import build_context  # noqa: E402

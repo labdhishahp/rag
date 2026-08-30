@@ -31,8 +31,11 @@ from prompt_builder import build_rag_prompt
 
 logger = logging.getLogger(__name__)
 
-_PROJECT_ROOT = Path(__file__).resolve().parent.parent
-load_dotenv(_PROJECT_ROOT / ".env")
+# Walk up for .env rather than assuming a fixed depth — see embeddings.py.
+for _candidate in Path(__file__).resolve().parents:
+    if (_candidate / ".env").is_file():
+        load_dotenv(_candidate / ".env")
+        break
 
 # Pinned to an explicit version, not an alias like "gemini-flash-latest".
 # Reason: a moving alias would silently change answers between runs, which makes

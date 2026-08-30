@@ -1,19 +1,22 @@
 # Backend — Knowledge Assistant API
 
-FastAPI HTTP boundary in front of the RAG core in `../src/`. No RAG logic lives
+FastAPI HTTP boundary in front of the RAG core in `src/`. No RAG logic lives
 here: this is routing, request validation, persistence, and turning `src/`'s
 dataclass results into JSON.
 
 ## Run locally
 
-From the **repository root** — not this directory. The API imports the RAG core
-from `../src`, so the root is the import root:
+From the **repository root**:
 
 ```bash
-pip install -r requirements.txt
-cp .env.example .env            # set GEMINI_API_KEY
+pip install -r backend/requirements.txt
+cp .env.example .env            # set HF_TOKEN and GEMINI_API_KEY
 uvicorn api.main:app --reload --port 8000 --app-dir backend
 ```
+
+`backend/` is deliberately self-contained — it holds `api/`, `src/`,
+`requirements.txt` and `pyproject.toml` — because a Vercel service cannot read
+files above its own root.
 
 With no `DATABASE_URL` set the API uses in-memory storage, so no database is
 needed to work locally.

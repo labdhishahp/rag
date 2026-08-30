@@ -23,8 +23,9 @@ import numpy as np
 
 API_DIR = Path(__file__).resolve().parent
 BACKEND_DIR = API_DIR.parent
-PROJECT_ROOT = BACKEND_DIR.parent
-SRC_DIR = PROJECT_ROOT / "src"
+# src/ lives inside backend/ so that this directory is a self-contained Vercel
+# service root — a service cannot read files above its own root.
+SRC_DIR = BACKEND_DIR / "src"
 if str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))
 

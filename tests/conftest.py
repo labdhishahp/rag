@@ -18,7 +18,7 @@ import pytest
 os.environ.setdefault("EMBEDDING_PROVIDER", "huggingface")
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
-SRC = PROJECT_ROOT / "src"
+SRC = PROJECT_ROOT / "backend" / "src"
 sys.path.insert(0, str(SRC))
 sys.path.insert(0, str(PROJECT_ROOT / "scripts"))
 
