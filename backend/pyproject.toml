@@ -11,3 +11,16 @@ dynamic = ["dependencies"]
 [tool.setuptools.dynamic]
 dependencies = { file = ["requirements.txt"] }
 
+[tool.vercel]
+# How Vercel finds the ASGI app for the "api" service.
+#
+# Required because the app lives in api/main.py, and Vercel's Python
+# entrypoint auto-detection only scans app.py / index.py / server.py /
+# main.py / wsgi.py / asgi.py at the service root and inside src/ or app/ —
+# api/ is not one of them. The fastapi framework preset also disables the
+# legacy "every .py under /api becomes a function" fallback, so without this
+# line nothing resolves and the build emits no function at all.
+#
+# The value is module:variable, not a file path. An earlier version of this
+# key held "backend/api/main.py", which could never have resolved.
+entrypoint = "api.main:app"
