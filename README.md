@@ -46,7 +46,7 @@ Two things happen before retrieval, and one after:
 ## Project layout
 
 ```
-src/                     the RAG pipeline, one file per stage
+backend/src/             the RAG pipeline, one file per stage
   pdf_layout.py            PDF geometry -> clean blocks (headings, no headers)
   document_loader.py       PDF/DOCX -> pages
   chunker.py               pages -> chunks with metadata
@@ -79,7 +79,7 @@ Two terminals, from the repository root.
 
 ```bash
 # 1. backend -> http://localhost:8000
-pip install -r requirements.txt
+pip install -r backend/requirements.txt
 cp .env.example .env            # add HF_TOKEN and GEMINI_API_KEY
 uvicorn api.main:app --reload --port 8000 --app-dir backend
 
@@ -114,14 +114,29 @@ else needs installing to try it locally.
 
 ## Deployment
 
-Two Vercel projects from this one repository:
+**One** Vercel project, using Vercel Services:
 
-- **frontend** — root directory `frontend/`. Set `BACKEND_URL` and
-  `BACKEND_API_KEY`. Neither has a `NEXT_PUBLIC_` prefix, so neither reaches
-  the browser, and both are read per request rather than baked in at build time.
-- **backend** — root directory the repository root (`vercel.json` and
-  `pyproject.toml` point at `backend/api/main.py`). It must be the root because
-  the API imports the RAG core from `src/`.
+- **Framework Preset:** `Services`
+- **Root Directory:** `.` (repository root, where `vercel.json` lives)
+
+`vercel.json` declares two services — `web` (Next.js, root `frontend/`) and
+`api` (FastAPI, root `backend/`) — and exactly one public rewrite, sending all
+traffic to `web`.
+
+There is deliberately **no public rewrite for `api`**. A Vercel service is
+private by default, so the FastAPI service has no internet-facing route at all.
+`web` reaches it through a service *binding*, which injects a private URL as
+`API_INTERNAL_URL`; internal calls skip the public request pipeline. A service
+without a binding cannot even derive that URL.
+
+That is what lets the browser never hold a credential: it calls `/api/*` on the
+Next.js service, which attaches the API key server-side and forwards over the
+binding. The key is kept as a second layer — the binding grants access but does
+not authenticate — so a public route added to `api` by mistake would still be
+refused.
+
+Because `api` has no public route, external uptime monitoring should use
+`https://<app>/api/health`, which the proxy forwards.
 
 The backend needs a Postgres database (`DATABASE_URL`) to keep documents and
 conversations across invocations, since serverless instances do not persist.

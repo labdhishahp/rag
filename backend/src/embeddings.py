@@ -67,7 +67,15 @@ from config import FLOORS_BY_PROVIDER
 try:
     from dotenv import load_dotenv
 
-    load_dotenv(Path(__file__).resolve().parent.parent / ".env")
+    # Walk up looking for .env rather than assuming a fixed depth. This module
+    # has already moved once (src/ now lives inside backend/ so that directory
+    # can be a self-contained deployment root), and a hardcoded number of
+    # ".parent"s silently stops finding the file when that happens — the keys
+    # just go missing and everything downstream skips or fails.
+    for _candidate in Path(__file__).resolve().parents:
+        if (_candidate / ".env").is_file():
+            load_dotenv(_candidate / ".env")
+            break
 except ImportError:  # pragma: no cover
     pass
 
