@@ -11,6 +11,7 @@ import {
 } from "@/lib/api";
 import type { ChatMessage, DocumentMetadata, UploadResponse } from "@/lib/types";
 import DocumentUpload from "./DocumentUpload";
+import InspectorPanel, { type InspectorView } from "./InspectorPanel";
 import MessageBubble from "./MessageBubble";
 
 type BackendStatus = "checking" | "up" | "down";
@@ -31,6 +32,8 @@ export default function KnowledgeAssistant() {
   const [input, setInput] = useState("");
   const [asking, setAsking] = useState(false);
   const [showDebug, setShowDebug] = useState(true);
+  // Which inspector view is open, or null when it is closed.
+  const [inspector, setInspector] = useState<InspectorView | null>(null);
 
   const transcriptRef = useRef<HTMLDivElement>(null);
 
@@ -67,6 +70,7 @@ export default function KnowledgeAssistant() {
     setDocument(upload.document);
     setMessages([]);
     setErrorBanner(null);
+    setInspector(null);   // the old document's chunks are no longer on screen
   }
 
   async function handleNewConversation() {
@@ -152,10 +156,26 @@ export default function KnowledgeAssistant() {
       </aside>
 
       <main className="chat-main">
-        <h1>Knowledge Assistant</h1>
-        <p className="subtitle">
-          Ask about your document. Follow-ups like &ldquo;explain that in more detail&rdquo; are understood.
-        </p>
+        <div className="chat-header">
+          <div>
+            <h1>Knowledge Assistant</h1>
+            <p className="subtitle">
+              Ask about your document. Follow-ups like &ldquo;explain that in more detail&rdquo; are understood.
+            </p>
+          </div>
+          {/* Inspect what the document actually became. Only meaningful once
+              something has been indexed. */}
+          {documentReady && (
+            <div className="inspector-buttons">
+              <button type="button" onClick={() => setInspector("chunks")}>
+                Chunks
+              </button>
+              <button type="button" onClick={() => setInspector("embeddings")}>
+                Embeddings
+              </button>
+            </div>
+          )}
+        </div>
 
         {errorBanner && (
           <div className="error-banner" role="alert">
@@ -182,6 +202,15 @@ export default function KnowledgeAssistant() {
             </div>
           )}
         </div>
+
+        {inspector && sessionId && (
+          <InspectorPanel
+            sessionId={sessionId}
+            view={inspector}
+            onChangeView={setInspector}
+            onClose={() => setInspector(null)}
+          />
+        )}
 
         <form className="composer" onSubmit={(e) => void handleSubmit(e)}>
           <input

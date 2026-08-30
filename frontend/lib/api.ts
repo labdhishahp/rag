@@ -2,7 +2,13 @@
 // imports Python RAG modules directly — every RAG capability is reached
 // through these calls, over the boundary defined in backend/api/.
 
-import type { ChatResponse, HealthResponse, UploadResponse } from "./types";
+import type {
+  ChatResponse,
+  ChunkEmbedding,
+  ChunksResponse,
+  HealthResponse,
+  UploadResponse,
+} from "./types";
 
 // Same-origin: every call goes to this app's own route handler, which adds the
 // API key server-side and forwards to Python (app/api/[...path]/route.ts).
@@ -11,6 +17,11 @@ import type { ChatResponse, HealthResponse, UploadResponse } from "./types";
 // would mean shipping the API key in the bundle, where anyone can read it, and
 // would put CORS back in the way. It also means the backend address is a
 // server-side setting (BACKEND_URL) rather than one baked in at build time.
+//
+// The paths below are RESOURCE paths with no /api prefix of their own — this
+// constant supplies it exactly once. Writing "/api/documents" here as well
+// produced "/api/api/documents", which the proxy dutifully forwarded to a
+// backend route that does not exist.
 const API_BASE_URL = "/api";
 
 export class ApiError extends Error {
@@ -62,11 +73,11 @@ export function getHealth(): Promise<HealthResponse> {
 export function uploadDocument(file: File): Promise<UploadResponse> {
   const formData = new FormData();
   formData.append("file", file);
-  return request<UploadResponse>("/api/documents", { method: "POST", body: formData });
+  return request<UploadResponse>("/documents", { method: "POST", body: formData });
 }
 
 export function askQuestion(sessionId: string, question: string, topK?: number): Promise<ChatResponse> {
-  return request<ChatResponse>("/api/chat", {
+  return request<ChatResponse>("/chat", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ session_id: sessionId, question, top_k: topK ?? null }),
@@ -74,9 +85,19 @@ export function askQuestion(sessionId: string, question: string, topK?: number):
 }
 
 export function resetConversation(sessionId: string): Promise<{ status: string }> {
-  return request<{ status: string }>(`/api/sessions/${sessionId}/reset`, { method: "POST" });
+  return request<{ status: string }>(`/sessions/${sessionId}/reset`, { method: "POST" });
 }
 
 export function deleteSession(sessionId: string): Promise<{ status: string }> {
-  return request<{ status: string }>(`/api/sessions/${sessionId}`, { method: "DELETE" });
+  return request<{ status: string }>(`/sessions/${sessionId}`, { method: "DELETE" });
+}
+
+/** Stored chunks plus a short preview of each embedding. */
+export function getChunks(sessionId: string): Promise<ChunksResponse> {
+  return request<ChunksResponse>(`/documents/${sessionId}/chunks`);
+}
+
+/** All 384 values for one chunk — requested only when a reader expands it. */
+export function getChunkEmbedding(sessionId: string, chunkId: number): Promise<ChunkEmbedding> {
+  return request<ChunkEmbedding>(`/documents/${sessionId}/chunks/${chunkId}/embedding`);
 }
