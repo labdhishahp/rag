@@ -7,6 +7,7 @@ from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field
 
 from ..rag_bridge import LLMError, RAGSystem, serialize_answer_result
+from ..security import AUTH, QUESTION_LIMIT
 
 logger = logging.getLogger("rag_api")
 router = APIRouter(tags=["chat"])
@@ -18,7 +19,7 @@ class ChatRequest(BaseModel):
     top_k: Optional[int] = Field(default=None, ge=1, le=20)
 
 
-@router.post("/api/chat")
+@router.post("/api/chat", dependencies=[AUTH, QUESTION_LIMIT])
 def chat(payload: ChatRequest, request: Request):
     question = payload.question.strip()
     if not question:
@@ -66,7 +67,7 @@ def chat(payload: ChatRequest, request: Request):
     return serialize_answer_result(result)
 
 
-@router.post("/api/sessions/{session_id}/reset")
+@router.post("/api/sessions/{session_id}/reset", dependencies=[AUTH])
 def reset_session(session_id: str, request: Request):
     state = request.app.state.rag_state
     if not state.storage.clear_conversation(session_id):
@@ -74,7 +75,7 @@ def reset_session(session_id: str, request: Request):
     return {"status": "ok"}
 
 
-@router.delete("/api/sessions/{session_id}")
+@router.delete("/api/sessions/{session_id}", dependencies=[AUTH])
 def delete_session(session_id: str, request: Request):
     state = request.app.state.rag_state
     if not state.storage.delete_session(session_id):

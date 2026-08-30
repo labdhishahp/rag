@@ -11,6 +11,7 @@ session_id instead of a browser's session_state.
 """
 
 import logging
+import os
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
@@ -24,19 +25,49 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("rag_api")
 
 
+def _check_deployment_config() -> None:
+    """
+    Refuse to start misconfigured on a deployment.
+
+    Both of these are safe to omit locally and dangerous to omit in public:
+    an unauthenticated API fronting two paid quotas is an open invitation, and
+    a wildcard CORS origin hands it to any website. Failing at boot makes the
+    mistake obvious instead of quietly expensive.
+    """
+    if not os.getenv("VERCEL"):
+        return
+    problems = []
+    if not settings.api_key:
+        problems.append("API_KEY is not set — the API would be open to anyone.")
+    if "*" in settings.allowed_origins:
+        problems.append("ALLOWED_ORIGINS contains '*' — any site could call this API.")
+    if problems:
+        raise RuntimeError("Refusing to start: " + " ".join(problems))
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    logger.info("Loading embedding model and LLM client...")
-    app.state.rag_state = AppState.build(
+    logger.info("Starting up...")
+    _check_deployment_config()
+    state = AppState.build(
         database_url=settings.database_url,
         llm_provider=settings.llm_provider,
     )
+    app.state.rag_state = state
     logger.info(
         "Startup complete. llm_configured=%s storage=%s",
-        app.state.rag_state.llm is not None,
-        type(app.state.rag_state.storage).__name__,
+        state.llm is not None,
+        type(state.storage).__name__,
     )
     yield
+    # Hand the database connection back rather than leaving the pooler to time
+    # it out. Vercel allows ~500ms for shutdown, and closing a socket is fast.
+    close = getattr(state.storage, "close", None)
+    if close is not None:
+        try:
+            close()
+        except Exception:  # noqa: BLE001 - shutdown must not raise
+            logger.warning("Ignoring error while closing storage", exc_info=True)
 
 
 def create_app() -> FastAPI:

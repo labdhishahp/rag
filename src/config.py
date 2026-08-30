@@ -9,40 +9,49 @@ Why this file exists:
 ------------------------------------------------------------------------------
 WHERE THE SIMILARITY FLOORS COME FROM
 ------------------------------------------------------------------------------
-They were measured, not chosen by feel, and they belong to ONE embedding model
-(gemini-embedding-001 at 768 dimensions). Cosine scores are not comparable
-across models: each spreads "unrelated" and "relevant" over its own range, so a
-threshold carried over from another model is a threshold that means nothing.
+They were measured, not chosen by feel, and each pair belongs to ONE embedding
+model. Cosine scores are not comparable across models: each spreads "unrelated"
+and "relevant" over its own range, so a threshold carried over from another
+model is a threshold that means nothing. That is why the floors are keyed by
+provider and travel with the document (see embeddings.py).
 
-The measurement: over a 28-question gold set (23 answerable, 5 absent), record
-the best-hit similarity for each question and put the hard floor in the gap.
+The measurement, per model: over the 28-question gold set (23 answerable, 5
+absent) in eval/gold.jsonl, record the best-hit similarity for each question
+and put the hard floor in the gap between the two groups.
+Reproduce with: ./.venv/bin/python eval/run_retrieval.py --provider <name>
 
-    absent        0.504  0.507  0.524  0.535  | 0.691 (a05)
-    answerable    0.657 (min) ................. 0.834 (max)
-    gap (0.535, 0.657)  ->  hard 0.60,  soft 0.70
+  BAAI/bge-small-en-v1.5 @384  (huggingface, PRIMARY)
+      absent        0.415  0.419  0.452  0.506  | 0.758 (a05)
+      answerable    0.622 (min) ................. 0.917 (max)
+      gap (0.506, 0.622)  ->  hard 0.55,  soft 0.65
 
-Four of the five absent questions sit clearly below every answerable one. The
-fifth (a05 — "Acme's stock price" asked of Acme's financial report) lands
-inside the answerable range: a genuine hard negative that no similarity
-threshold can catch, which is why the generation prompt also carries a refusal
-rule. The soft floor is 0.70 rather than 0.69 because 0.70 flags a05 as low
-confidence without flagging one additional answerable question (the next is
-0.707).
+  gemini-embedding-001 @768  (gemini, FALLBACK)
+      absent        0.504  0.507  0.524  0.535  | 0.691 (a05)
+      answerable    0.657 (min) ................. 0.834 (max)
+      gap (0.535, 0.657)  ->  hard 0.60,  soft 0.70
+
+In BOTH models four of five absent questions sit clearly below every answerable
+one, and the fifth (a05 — "Acme's stock price" asked of Acme's financial
+report) lands inside the answerable range. It is a genuine hard negative that
+no similarity threshold can catch under any model measured, which is why the
+generation prompt also carries a refusal rule.
 
 Between HARD and SOFT the system still answers, but flags low confidence.
 
-If you change the embedding model or its dimensionality, these two numbers must
-be re-measured against a gold set. Do not interpolate. The evaluation harness
-that produced them is in git history (removed in the runtime-only cleanup);
-recover it with `git log --diff-filter=D -- eval/`.
+If you add a provider or change a model's dimensionality, measure the new pair
+against the gold set. Do not interpolate.
 """
 
-# Below this, retrieval found nothing relevant. No expansion, and the answer
-# path declines WITHOUT calling the LLM (see rag.py).
-SIMILARITY_HARD_FLOOR = 0.60
+# (hard floor, soft floor) per embedding provider. Not interchangeable.
+FLOORS_BY_PROVIDER = {
+    "huggingface": (0.55, 0.65),
+    "gemini": (0.60, 0.70),
+}
 
-# Below this (but above the hard floor) the best hit is weak: answer, but warn.
-SIMILARITY_SOFT_FLOOR = 0.70
+# Defaults for callers that have no document in hand (a bare Retriever in a
+# test, say). Anything answering a real question should use the floors of the
+# provider that embedded the document it is searching.
+SIMILARITY_HARD_FLOOR, SIMILARITY_SOFT_FLOOR = FLOORS_BY_PROVIDER["huggingface"]
 
 # Relative expansion margin: expand only around entries within this much of
 # the best hit. DISABLED (None) after measurement:

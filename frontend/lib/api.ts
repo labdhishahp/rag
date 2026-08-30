@@ -4,7 +4,14 @@
 
 import type { ChatResponse, HealthResponse, UploadResponse } from "./types";
 
-const API_BASE_URL = (process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000").replace(/\/$/, "");
+// Same-origin: every call goes to this app's own route handler, which adds the
+// API key server-side and forwards to Python (app/api/[...path]/route.ts).
+//
+// Deliberately not the backend URL. Pointing the browser straight at Python
+// would mean shipping the API key in the bundle, where anyone can read it, and
+// would put CORS back in the way. It also means the backend address is a
+// server-side setting (BACKEND_URL) rather than one baked in at build time.
+const API_BASE_URL = "/api";
 
 export class ApiError extends Error {
   status: number;

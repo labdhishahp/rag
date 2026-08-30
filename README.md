@@ -12,7 +12,7 @@ the answer, the system says so instead of inventing one.
    pages of text
         ↓  chunker.py                            split on sentence boundaries
    chunks (+ page, section, neighbours)
-        ↓  embeddings.py                         text -> vectors (Gemini API)
+        ↓  embeddings.py            text -> vectors (bge-small via HF API)
    vectors
         ↓  vector_store.py                       store + cosine search
    top matches for a question
@@ -22,6 +22,15 @@ the answer, the system says so instead of inventing one.
         ↓  prompt_builder.py + llm.py            grounded prompt -> Gemini
    answer + verified citations
 ```
+
+**Embeddings come from two providers, and the choice is per document.**
+`BAAI/bge-small-en-v1.5` over the Hugging Face API is primary (384-d); Gemini
+`embedding-001` (768-d) is the fallback when Hugging Face is unreachable. A
+384-d vector and a 768-d one are different coordinate systems, not just
+different lengths, so **fallback happens when INDEXING a document and never
+when querying one**: each document records the provider that embedded it and is
+always searched with that same provider. The similarity thresholds travel with
+it too, since a 0.62 score means different things under the two models.
 
 Two things happen before retrieval, and one after:
 
@@ -41,7 +50,7 @@ src/                     the RAG pipeline, one file per stage
   pdf_layout.py            PDF geometry -> clean blocks (headings, no headers)
   document_loader.py       PDF/DOCX -> pages
   chunker.py               pages -> chunks with metadata
-  embeddings.py            text -> vectors (Gemini embedding API)
+  embeddings.py            text -> vectors (bge-small via HF; Gemini fallback)
   vector_store.py          vectors + metadata, exact cosine search
   retriever.py             question -> top-k chunks
   context_builder.py       hits -> expanded, merged, budgeted evidence
@@ -71,7 +80,7 @@ Two terminals, from the repository root.
 ```bash
 # 1. backend -> http://localhost:8000
 pip install -r requirements.txt
-cp .env.example .env            # add your GEMINI_API_KEY
+cp .env.example .env            # add HF_TOKEN and GEMINI_API_KEY
 uvicorn api.main:app --reload --port 8000 --app-dir backend
 
 # 2. frontend -> http://localhost:3000
@@ -87,26 +96,63 @@ else needs installing to try it locally.
 
 | Variable | Required | Default | Meaning |
 |---|---|---|---|
-| `GEMINI_API_KEY` | yes | — | Embeddings and answer generation |
+| `HF_TOKEN` | yes | — | Primary embedding provider (bge-small) |
+| `GEMINI_API_KEY` | yes | — | Answer generation, and the embedding fallback |
 | `DATABASE_URL` | deployment | — | Postgres; unset means in-memory |
 | `ALLOWED_ORIGINS` | deployment | `localhost:3000` | CORS allowlist |
-| `EMBEDDING_DIMENSION` | no | `768` | Embedding size |
-| `EMBEDDING_RPM` | no | `90` | Client-side rate cap (free tier allows 100/min) |
+| `EMBEDDING_PROVIDER` | no | `huggingface` | Provider for new documents |
+| `EMBEDDING_FALLBACK_PROVIDER` | no | `gemini` | Used when the primary is unreachable |
+| `EMBEDDING_DIMENSION` | no | `768` | Gemini fallback output size |
+| `EMBEDDING_RPM` | no | `90` | Gemini rate cap (free tier allows 100/min) |
 | `MAX_UPLOAD_BYTES` | no | `4194304` | Kept under Vercel's 4.5MB request limit |
-| `NEXT_PUBLIC_API_URL` | frontend | `localhost:8000` | Backend URL, read at **build** time |
+| `API_KEY` | **yes on Vercel** | — | Shared secret required in `X-API-Key` |
+| `RATE_LIMIT_QUESTIONS` | no | `20` | Per client, per window |
+| `RATE_LIMIT_UPLOADS` | no | `10` | Per client, per window |
+| `RATE_LIMIT_WINDOW_SECONDS` | no | `3600` | Rolling window |
+| `BACKEND_URL` | frontend | `localhost:8000` | Python API, read at **request** time |
+| `BACKEND_API_KEY` | frontend | — | Must match `API_KEY`; server-side only |
 
 ## Deployment
 
 Two Vercel projects from this one repository:
 
-- **frontend** — root directory `frontend/`. Set `NEXT_PUBLIC_API_URL` before
-  building; it is compiled into the bundle, so changing it needs a redeploy.
+- **frontend** — root directory `frontend/`. Set `BACKEND_URL` and
+  `BACKEND_API_KEY`. Neither has a `NEXT_PUBLIC_` prefix, so neither reaches
+  the browser, and both are read per request rather than baked in at build time.
 - **backend** — root directory the repository root (`vercel.json` and
   `pyproject.toml` point at `backend/api/main.py`). It must be the root because
   the API imports the RAG core from `src/`.
 
 The backend needs a Postgres database (`DATABASE_URL`) to keep documents and
 conversations across invocations, since serverless instances do not persist.
+Use Supabase's transaction pooler (port 6543).
+
+### How the API is protected
+
+The browser never talks to Python directly. It calls this app's own
+`/api/[...path]` route handler, which runs server-side, attaches the API key
+and forwards the request. That keeps the key out of the JS bundle — anything
+the browser holds is readable — and makes the browser's requests same-origin,
+so CORS never enters the picture. `ALLOWED_ORIGINS` therefore only governs
+direct (non-browser) access, and the app refuses to boot on Vercel with a
+wildcard origin or a missing `API_KEY`.
+
+Rate limits are counted in Postgres rather than in memory: a serverless
+deployment runs many instances, and a per-instance counter would allow the
+limit once per instance. Uploads and questions have separate budgets because
+they exhaust different quotas.
 
 Two known limits: uploads are capped at 4.5MB by the platform, and the Gemini
-free tier allows 100 embeddings/minute and 20 generations/day per model.
+free tier allows 20 generations/day per model. Embeddings now go to Hugging
+Face, so the Gemini embedding cap (1000/day, per project) only applies when the
+fallback is in use.
+
+## Retrieval quality
+
+Measured on a 28-question gold set (23 answerable, 5 absent) across five
+documents. Reproduce with `python eval/run_retrieval.py --provider huggingface`.
+
+| Provider | Recall@3 | Gold in context |
+|---|---|---|
+| `huggingface` — bge-small @384 (primary) | **0.826** | 0.826 |
+| `gemini` — embedding-001 @768 (fallback) | 0.870 | 0.870 |

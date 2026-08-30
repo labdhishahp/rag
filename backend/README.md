@@ -22,7 +22,7 @@ needed to work locally.
 
 | Method | Path | Purpose |
 |---|---|---|
-| GET | `/health` | Readiness: embedding model, LLM configured, storage reachable |
+| GET | `/health` | Readiness: each embedding provider, LLM configured, storage reachable |
 | POST | `/api/documents` | Upload + index a PDF/DOCX (multipart `file`); returns `session_id` |
 | GET | `/api/documents/{session_id}` | A session's document metadata |
 | POST | `/api/chat` | `{session_id, question, top_k?}` → answer + citations + retrieval detail |
@@ -59,10 +59,12 @@ database migration.
 
 | Variable | Required | Default | Meaning |
 |---|---|---|---|
-| `GEMINI_API_KEY` | yes | — | Embeddings and generation |
+| `HF_TOKEN` | yes | — | Primary embedding provider (bge-small, 384-d) |
+| `GEMINI_API_KEY` | yes | — | Generation, and the 768-d embedding fallback |
 | `DATABASE_URL` | deployment | — | Postgres; unset = in-memory |
 | `ALLOWED_ORIGINS` | deployment | `localhost:3000` | CORS allowlist |
-| `EMBEDDING_DIMENSION` | no | `768` | Embedding size |
+| `EMBEDDING_PROVIDER` | no | `huggingface` | Provider for new documents |
+| `EMBEDDING_DIMENSION` | no | `768` | Gemini fallback output size |
 | `EMBEDDING_RPM` | no | `90` | Client-side rate cap (free tier allows 100/min) |
 | `MAX_UPLOAD_BYTES` | no | `4194304` | Under Vercel's 4.5MB request-body limit |
 | `LLM_PROVIDER` | no | `gemini` | See `src/llm.py` |

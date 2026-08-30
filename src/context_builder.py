@@ -167,10 +167,22 @@ class ContextResult:
         return bool(self.passages) and self.evidence_level != "none"
 
 
-def evidence_level_for(best_similarity: float) -> str:
-    if best_similarity < SIMILARITY_HARD_FLOOR:
+def evidence_level_for(
+    best_similarity: float,
+    hard_floor: float = SIMILARITY_HARD_FLOOR,
+    soft_floor: float = SIMILARITY_SOFT_FLOOR,
+) -> str:
+    """
+    How much to trust the best hit.
+
+    The floors are arguments rather than globals because they are properties of
+    the EMBEDDING MODEL, not of the system: a 0.62 similarity is a good match
+    under bge-small and a poor one under gemini-embedding-001. The caller passes
+    the floors belonging to the provider that embedded the document.
+    """
+    if best_similarity < hard_floor:
         return "none"
-    if best_similarity < SIMILARITY_SOFT_FLOOR:
+    if best_similarity < soft_floor:
         return "weak"
     return "ok"
 
@@ -196,8 +208,10 @@ def build_context(
     store,
     neighbour_window: int = DEFAULT_NEIGHBOUR_WINDOW,
     budget_chars: int = DEFAULT_CONTEXT_BUDGET_CHARS,
-    expand_min_similarity: float = DEFAULT_EXPAND_MIN_SIMILARITY,
+    expand_min_similarity: float | None = None,
     expansion_margin: float | None = EXPANSION_MARGIN,
+    hard_floor: float = SIMILARITY_HARD_FLOOR,
+    soft_floor: float = SIMILARITY_SOFT_FLOOR,
     debug: bool = True,
 ) -> ContextResult:
     """
@@ -217,8 +231,13 @@ def build_context(
     if not entry_chunks:
         return ContextResult()
 
+    # Expanding is only worth doing from a foothold that is actually relevant,
+    # and "relevant" is defined by this provider's hard floor.
+    if expand_min_similarity is None:
+        expand_min_similarity = hard_floor
+
     best_similarity = max(c.get("similarity", 0.0) for c in entry_chunks)
-    level = evidence_level_for(best_similarity)
+    level = evidence_level_for(best_similarity, hard_floor, soft_floor)
 
     # -------------------------------------------------------------------
     # STAGE 1: SELECT — entry points, then walk outwards to neighbours

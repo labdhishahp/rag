@@ -54,6 +54,13 @@ def _document_metadata(
         "page_label": pages[0].get("page_label", "page") if pages else "page",
         "page_count": len(pages),
         "chunk_count": retriever.vector_store.ntotal,
+        # Which embedding space this document's vectors live in. Recorded, not
+        # inferred, because every later query MUST be embedded by the same
+        # provider — see embeddings.py. Without this the fallback would be
+        # unsafe: a document indexed by the fallback could be queried by the
+        # primary, comparing 384-d vectors against 768-d ones.
+        "embedding_provider": getattr(embedding_model, "name", None),
+        "embedding_model": getattr(embedding_model, "model_name", None),
         "embedding_dimension": embedding_model.dimension,
         "status": "ready",
     }

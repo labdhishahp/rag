@@ -29,7 +29,12 @@ if str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))
 
 from conversation import Conversation  # noqa: E402
-from embeddings import EmbeddingModel  # noqa: E402
+from embeddings import (  # noqa: E402
+    EmbeddingError,
+    EmbeddingModel,
+    create_provider,
+    provider_for_indexing,
+)
 from llm import LLMClient, LLMError, create_llm  # noqa: E402
 from pipeline import DocumentProcessingError, index_document_from_upload  # noqa: E402
 from rag import RAGSystem  # noqa: E402
@@ -40,6 +45,7 @@ logger = logging.getLogger("rag_api")
 
 __all__ = [
     "Conversation",
+    "EmbeddingError",
     "EmbeddingModel",
     "LLMClient",
     "LLMError",
@@ -85,23 +91,23 @@ class AppState:
 
     def __init__(
         self,
-        embedding_model: EmbeddingModel,
         llm: Optional[LLMClient],
         llm_init_error: Optional[str],
         storage,
         retrievers,
     ):
-        self.embedding_model = embedding_model
         self.llm = llm
         self.llm_init_error = llm_init_error
         self.storage = storage
         self.retrievers = retrievers
+        # Built on demand and kept, because constructing one is cheap but not
+        # free. Keyed by provider name — a process may hold several at once when
+        # documents in the store were indexed by different providers.
+        self._providers: dict[str, object] = {}
 
     @classmethod
     def build(cls, *, database_url: Optional[str] = None, llm_provider: str = "gemini") -> "AppState":
         from .storage import RetrieverCache, create_storage
-
-        embedding_model = EmbeddingModel()
 
         llm: Optional[LLMClient] = None
         llm_init_error: Optional[str] = None
@@ -112,7 +118,33 @@ class AppState:
             logger.warning("LLM not configured at startup: %s", llm_init_error)
 
         storage = create_storage(database_url)
-        return cls(embedding_model, llm, llm_init_error, storage, RetrieverCache(storage))
+        return cls(llm, llm_init_error, storage, RetrieverCache(storage))
+
+    # ---- embedding providers ---------------------------------------------
+    def provider(self, name: str):
+        """One named provider, built once per process."""
+        if name not in self._providers:
+            self._providers[name] = create_provider(name)
+        return self._providers[name]
+
+    def indexing_provider(self):
+        """
+        The provider for a NEW document: primary, or the fallback if the
+        primary is unavailable. The only place a fallback is allowed.
+        """
+        provider = provider_for_indexing()
+        self._providers.setdefault(provider.name, provider)
+        return provider
+
+    def document_provider(self, metadata: dict):
+        """
+        The provider a stored document was indexed with — never a fallback.
+        Answering with a different provider would compare vectors from two
+        different embedding spaces, which is meaningless.
+        """
+        # A document stored before providers were recorded predates the switch
+        # to Hugging Face, so its vectors are Gemini's.
+        return self.provider(metadata.get("embedding_provider") or "gemini")
 
     # ---- session assembly -------------------------------------------------
     def load_session(self, session_id: str) -> Optional[LoadedSession]:
@@ -123,7 +155,7 @@ class AppState:
         metadata = self.storage.get_document(document_id)
         if metadata is None:
             return None
-        retriever = self.retrievers.get(document_id, self.embedding_model)
+        retriever = self.retrievers.get(document_id, self.document_provider(metadata))
         if retriever is None:
             return None
         conversation = self.storage.load_conversation(session_id)

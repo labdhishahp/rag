@@ -45,7 +45,7 @@ load_dotenv(_PROJECT_ROOT / ".env")
 # (quotaId GenerateRequestsPerDayPerProjectPerModel-FreeTier), which a single
 # test session exhausts. Free-tier quota is per-model, so 3.5-flash has its own
 # separate budget and is the practical choice for this project.
-DEFAULT_MODEL = "gemini-3.5-flash"
+DEFAULT_MODEL = "gemini-3.5-flash-lite"
 
 # Free-tier quotas are PER MODEL and PER DAY (20 requests/day/model observed).
 # A single test session exhausts one model. When a daily-quota error comes
