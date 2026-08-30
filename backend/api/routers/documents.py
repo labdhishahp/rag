@@ -6,7 +6,12 @@ from pathlib import Path
 from fastapi import APIRouter, File, HTTPException, Request, UploadFile
 
 from ..config import settings
-from ..rag_bridge import DocumentProcessingError, index_document_from_upload, public_document_metadata
+from ..rag_bridge import (
+    DocumentProcessingError,
+    EmbeddingError,
+    index_document_from_upload,
+    public_document_metadata,
+)
 
 logger = logging.getLogger("rag_api")
 router = APIRouter(tags=["documents"])
@@ -35,8 +40,19 @@ async def upload_document(request: Request, file: UploadFile = File(...)):
 
     state = request.app.state.rag_state
     try:
+        # Fallback to the secondary embedding provider is allowed HERE and only
+        # here: the provider that wins is recorded on the document, and every
+        # later query against it uses that same provider (see embeddings.py).
+        embedder = state.indexing_provider()
+    except EmbeddingError as exc:
+        raise HTTPException(
+            status_code=503,
+            detail=f"No embedding provider is available: {exc}",
+        ) from exc
+
+    try:
         _, metadata = index_document_from_upload(
-            data, filename=filename, embedding_model=state.embedding_model,
+            data, filename=filename, embedding_model=embedder,
         )
     except DocumentProcessingError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc

@@ -1,0 +1,984 @@
+{
+  "tag": "gemini-768",
+  "top_k": 3,
+  "embedding_model": "default",
+  "skipped": [],
+  "rows": [
+    {
+      "id": "f01",
+      "doc": "data/formula_sample.pdf",
+      "type": "direct",
+      "answerable": true,
+      "gold_ids": [
+        1
+      ],
+      "entry_ids": [
+        2,
+        1,
+        3
+      ],
+      "expanded_ids": [],
+      "context_ids": [
+        1,
+        2,
+        3
+      ],
+      "gold_in_entries": true,
+      "gold_in_context": true,
+      "context_precision": 0.33753501400560226,
+      "context_chars": 1428,
+      "n_passages": 1,
+      "n_expanded": 0,
+      "best_similarity": 0.7456687092781067,
+      "elapsed_ms": 0.062167004216462374
+    },
+    {
+      "id": "f02",
+      "doc": "data/formula_sample.pdf",
+      "type": "detailed",
+      "answerable": true,
+      "gold_ids": [
+        1,
+        3
+      ],
+      "entry_ids": [
+        2,
+        1,
+        3
+      ],
+      "expanded_ids": [],
+      "context_ids": [
+        1,
+        2,
+        3
+      ],
+      "gold_in_entries": true,
+      "gold_in_context": true,
+      "context_precision": 0.6953781512605042,
+      "context_chars": 1428,
+      "n_passages": 1,
+      "n_expanded": 0,
+      "best_similarity": 0.7552273273468018,
+      "elapsed_ms": 0.03879099676851183
+    },
+    {
+      "id": "f03",
+      "doc": "data/formula_sample.pdf",
+      "type": "direct",
+      "answerable": true,
+      "gold_ids": [
+        2
+      ],
+      "entry_ids": [
+        2,
+        1,
+        3
+      ],
+      "expanded_ids": [],
+      "context_ids": [
+        1,
+        2,
+        3
+      ],
+      "gold_in_entries": true,
+      "gold_in_context": true,
+      "context_precision": 0.33403361344537813,
+      "context_chars": 1428,
+      "n_passages": 1,
+      "n_expanded": 0,
+      "best_similarity": 0.782696008682251,
+      "elapsed_ms": 0.03379098779987544
+    },
+    {
+      "id": "f04",
+      "doc": "data/formula_sample.pdf",
+      "type": "example",
+      "answerable": true,
+      "gold_ids": [
+        3
+      ],
+      "entry_ids": [
+        3,
+        1,
+        2
+      ],
+      "expanded_ids": [],
+      "context_ids": [
+        1,
+        2,
+        3
+      ],
+      "gold_in_entries": true,
+      "gold_in_context": true,
+      "context_precision": 0.35784313725490197,
+      "context_chars": 1428,
+      "n_passages": 1,
+      "n_expanded": 0,
+      "best_similarity": 0.7293378114700317,
+      "elapsed_ms": 0.031791001674719155
+    },
+    {
+      "id": "f05",
+      "doc": "data/formula_sample.pdf",
+      "type": "direct",
+      "answerable": true,
+      "gold_ids": [
+        5
+      ],
+      "entry_ids": [
+        5,
+        6,
+        2
+      ],
+      "expanded_ids": [
+        1,
+        3
+      ],
+      "context_ids": [
+        1,
+        2,
+        3,
+        5,
+        6
+      ],
+      "gold_in_entries": true,
+      "gold_in_context": true,
+      "context_precision": 0.21119473189087487,
+      "context_chars": 2126,
+      "n_passages": 2,
+      "n_expanded": 2,
+      "best_similarity": 0.7637293338775635,
+      "elapsed_ms": 0.03183299850206822
+    },
+    {
+      "id": "f06",
+      "doc": "data/formula_sample.pdf",
+      "type": "direct",
+      "answerable": true,
+      "gold_ids": [
+        7
+      ],
+      "entry_ids": [
+        7,
+        6,
+        5
+      ],
+      "expanded_ids": [],
+      "context_ids": [
+        5,
+        6,
+        7
+      ],
+      "gold_in_entries": true,
+      "gold_in_context": true,
+      "context_precision": 0.3602199816681943,
+      "context_chars": 1091,
+      "n_passages": 2,
+      "n_expanded": 0,
+      "best_similarity": 0.7363331317901611,
+      "elapsed_ms": 0.029417002224363387
+    },
+    {
+      "id": "f07",
+      "doc": "data/formula_sample.pdf",
+      "type": "absent",
+      "answerable": false,
+      "gold_ids": [],
+      "entry_ids": [
+        0,
+        1,
+        5
+      ],
+      "expanded_ids": [],
+      "context_ids": [
+        0,
+        1,
+        5
+      ],
+      "gold_in_entries": false,
+      "gold_in_context": false,
+      "context_precision": 0.0,
+      "context_chars": 1386,
+      "n_passages": 3,
+      "n_expanded": 0,
+      "best_similarity": 0.5043163895606995,
+      "elapsed_ms": 0.030791998142376542
+    },
+    {
+      "id": "f08",
+      "doc": "data/formula_sample.pdf",
+      "type": "absent",
+      "answerable": false,
+      "gold_ids": [],
+      "entry_ids": [
+        0,
+        5,
+        7
+      ],
+      "expanded_ids": [],
+      "context_ids": [
+        0,
+        5,
+        7
+      ],
+      "gold_in_entries": false,
+      "gold_in_context": false,
+      "context_precision": 0.0,
+      "context_chars": 1297,
+      "n_passages": 3,
+      "n_expanded": 0,
+      "best_similarity": 0.5348678827285767,
+      "elapsed_ms": 0.026875000912696123
+    },
+    {
+      "id": "a01",
+      "doc": "data/sample.pdf",
+      "type": "direct",
+      "answerable": true,
+      "gold_ids": [
+        6
+      ],
+      "entry_ids": [
+        5,
+        4,
+        9
+      ],
+      "expanded_ids": [],
+      "context_ids": [
+        4,
+        5,
+        9
+      ],
+      "gold_in_entries": false,
+      "gold_in_context": false,
+      "context_precision": 0.0,
+      "context_chars": 633,
+      "n_passages": 3,
+      "n_expanded": 0,
+      "best_similarity": 0.7646164894104004,
+      "elapsed_ms": 0.04400000034365803
+    },
+    {
+      "id": "a02",
+      "doc": "data/sample.pdf",
+      "type": "direct",
+      "answerable": true,
+      "gold_ids": [
+        2
+      ],
+      "entry_ids": [
+        2,
+        11,
+        10
+      ],
+      "expanded_ids": [],
+      "context_ids": [
+        2,
+        10,
+        11
+      ],
+      "gold_in_entries": true,
+      "gold_in_context": true,
+      "context_precision": 0.3913738019169329,
+      "context_chars": 626,
+      "n_passages": 3,
+      "n_expanded": 0,
+      "best_similarity": 0.6570242643356323,
+      "elapsed_ms": 0.03374999505467713
+    },
+    {
+      "id": "a03",
+      "doc": "data/sample.pdf",
+      "type": "direct",
+      "answerable": true,
+      "gold_ids": [
+        1,
+        9
+      ],
+      "entry_ids": [
+        1,
+        8,
+        3
+      ],
+      "expanded_ids": [],
+      "context_ids": [
+        1,
+        3,
+        8
+      ],
+      "gold_in_entries": true,
+      "gold_in_context": true,
+      "context_precision": 0.4269521410579345,
+      "context_chars": 794,
+      "n_passages": 3,
+      "n_expanded": 0,
+      "best_similarity": 0.7640125155448914,
+      "elapsed_ms": 0.02866699651349336
+    },
+    {
+      "id": "a04",
+      "doc": "data/sample.pdf",
+      "type": "direct",
+      "answerable": true,
+      "gold_ids": [
+        4
+      ],
+      "entry_ids": [
+        4,
+        9,
+        3
+      ],
+      "expanded_ids": [],
+      "context_ids": [
+        3,
+        4,
+        9
+      ],
+      "gold_in_entries": true,
+      "gold_in_context": true,
+      "context_precision": 0.34405594405594403,
+      "context_chars": 715,
+      "n_passages": 3,
+      "n_expanded": 0,
+      "best_similarity": 0.8252743482589722,
+      "elapsed_ms": 0.026542009436525404
+    },
+    {
+      "id": "a05",
+      "doc": "data/sample.pdf",
+      "type": "absent",
+      "answerable": false,
+      "gold_ids": [],
+      "entry_ids": [
+        8,
+        3,
+        9
+      ],
+      "expanded_ids": [],
+      "context_ids": [
+        3,
+        8,
+        9
+      ],
+      "gold_in_entries": false,
+      "gold_in_context": false,
+      "context_precision": 0.0,
+      "context_chars": 685,
+      "n_passages": 3,
+      "n_expanded": 0,
+      "best_similarity": 0.6906574964523315,
+      "elapsed_ms": 0.02662499900907278
+    },
+    {
+      "id": "s01",
+      "doc": "data/real/rag_survey.pdf",
+      "type": "direct",
+      "answerable": true,
+      "gold_ids": [
+        2
+      ],
+      "entry_ids": [
+        31,
+        21,
+        178
+      ],
+      "expanded_ids": [
+        20,
+        22,
+        30,
+        32,
+        177,
+        179
+      ],
+      "context_ids": [
+        20,
+        21,
+        22,
+        30,
+        31,
+        32,
+        177,
+        178,
+        179
+      ],
+      "gold_in_entries": false,
+      "gold_in_context": false,
+      "context_precision": 0.0,
+      "context_chars": 3614,
+      "n_passages": 5,
+      "n_expanded": 6,
+      "best_similarity": 0.834465742111206,
+      "elapsed_ms": 503.5993750061607
+    },
+    {
+      "id": "s02",
+      "doc": "data/real/rag_survey.pdf",
+      "type": "direct",
+      "answerable": true,
+      "gold_ids": [
+        34
+      ],
+      "entry_ids": [
+        33,
+        32,
+        34
+      ],
+      "expanded_ids": [
+        31,
+        35
+      ],
+      "context_ids": [
+        31,
+        32,
+        33,
+        34,
+        35
+      ],
+      "gold_in_entries": true,
+      "gold_in_context": true,
+      "context_precision": 0.1978683966635774,
+      "context_chars": 2158,
+      "n_passages": 1,
+      "n_expanded": 2,
+      "best_similarity": 0.7708249092102051,
+      "elapsed_ms": 530.1388750085607
+    },
+    {
+      "id": "s03",
+      "doc": "data/real/rag_survey.pdf",
+      "type": "direct",
+      "answerable": true,
+      "gold_ids": [
+        38
+      ],
+      "entry_ids": [
+        38,
+        196,
+        21
+      ],
+      "expanded_ids": [
+        20,
+        22,
+        37,
+        39,
+        195,
+        197
+      ],
+      "context_ids": [
+        20,
+        21,
+        22,
+        37,
+        38,
+        39,
+        195,
+        196,
+        197
+      ],
+      "gold_in_entries": true,
+      "gold_in_context": true,
+      "context_precision": 0.13924427253793514,
+      "context_chars": 3361,
+      "n_passages": 4,
+      "n_expanded": 6,
+      "best_similarity": 0.7072340846061707,
+      "elapsed_ms": 533.7187910045031
+    },
+    {
+      "id": "s04",
+      "doc": "data/real/rag_survey.pdf",
+      "type": "direct",
+      "answerable": true,
+      "gold_ids": [
+        26,
+        27
+      ],
+      "entry_ids": [
+        21,
+        26,
+        29
+      ],
+      "expanded_ids": [
+        20,
+        22,
+        25,
+        27,
+        28
+      ],
+      "context_ids": [
+        20,
+        21,
+        22,
+        25,
+        26,
+        27,
+        28,
+        29
+      ],
+      "gold_in_entries": true,
+      "gold_in_context": true,
+      "context_precision": 0.29106714628297364,
+      "context_chars": 3336,
+      "n_passages": 3,
+      "n_expanded": 5,
+      "best_similarity": 0.8167973756790161,
+      "elapsed_ms": 517.9191249917494
+    },
+    {
+      "id": "s05",
+      "doc": "data/real/rag_survey.pdf",
+      "type": "comparison",
+      "answerable": true,
+      "gold_ids": [
+        29
+      ],
+      "entry_ids": [
+        21,
+        37,
+        178
+      ],
+      "expanded_ids": [
+        20,
+        22,
+        36,
+        38,
+        177,
+        179
+      ],
+      "context_ids": [
+        20,
+        21,
+        22,
+        36,
+        37,
+        38,
+        177,
+        178,
+        179
+      ],
+      "gold_in_entries": false,
+      "gold_in_context": false,
+      "context_precision": 0.0,
+      "context_chars": 3576,
+      "n_passages": 4,
+      "n_expanded": 6,
+      "best_similarity": 0.8065652251243591,
+      "elapsed_ms": 557.9865409963531
+    },
+    {
+      "id": "s06",
+      "doc": "data/real/rag_survey.pdf",
+      "type": "direct",
+      "answerable": true,
+      "gold_ids": [
+        33,
+        89,
+        185
+      ],
+      "entry_ids": [
+        90,
+        33,
+        89
+      ],
+      "expanded_ids": [
+        32,
+        34,
+        88,
+        91
+      ],
+      "context_ids": [
+        32,
+        33,
+        34,
+        88,
+        89,
+        90,
+        91
+      ],
+      "gold_in_entries": true,
+      "gold_in_context": true,
+      "context_precision": 0.3025210084033613,
+      "context_chars": 2737,
+      "n_passages": 3,
+      "n_expanded": 4,
+      "best_similarity": 0.7615013122558594,
+      "elapsed_ms": 615.6747080094647
+    },
+    {
+      "id": "s07",
+      "doc": "data/real/rag_survey.pdf",
+      "type": "absent",
+      "answerable": false,
+      "gold_ids": [],
+      "entry_ids": [
+        205,
+        183,
+        218
+      ],
+      "expanded_ids": [],
+      "context_ids": [
+        183,
+        205,
+        218
+      ],
+      "gold_in_entries": false,
+      "gold_in_context": false,
+      "context_precision": 0.0,
+      "context_chars": 1276,
+      "n_passages": 3,
+      "n_expanded": 0,
+      "best_similarity": 0.5074226260185242,
+      "elapsed_ms": 554.8504590115044
+    },
+    {
+      "id": "n01",
+      "doc": "data/real/nist_sp800-207.pdf",
+      "type": "detailed",
+      "answerable": true,
+      "gold_ids": [
+        79
+      ],
+      "entry_ids": [
+        79,
+        102,
+        68
+      ],
+      "expanded_ids": [
+        67,
+        69,
+        78,
+        80,
+        101
+      ],
+      "context_ids": [
+        67,
+        68,
+        69,
+        78,
+        79,
+        80,
+        101,
+        102
+      ],
+      "gold_in_entries": true,
+      "gold_in_context": true,
+      "context_precision": 0.13175382837330252,
+      "context_chars": 3461,
+      "n_passages": 3,
+      "n_expanded": 5,
+      "best_similarity": 0.7866262197494507,
+      "elapsed_ms": 577.2467080096249
+    },
+    {
+      "id": "n02",
+      "doc": "data/real/nist_sp800-207.pdf",
+      "type": "direct",
+      "answerable": true,
+      "gold_ids": [
+        75
+      ],
+      "entry_ids": [
+        75,
+        185,
+        76
+      ],
+      "expanded_ids": [
+        74,
+        77,
+        184,
+        186
+      ],
+      "context_ids": [
+        74,
+        75,
+        76,
+        77,
+        184,
+        185,
+        186
+      ],
+      "gold_in_entries": true,
+      "gold_in_context": true,
+      "context_precision": 0.1884996191926885,
+      "context_chars": 2626,
+      "n_passages": 3,
+      "n_expanded": 4,
+      "best_similarity": 0.6789012551307678,
+      "elapsed_ms": 585.8634169999277
+    },
+    {
+      "id": "n03",
+      "doc": "data/real/nist_sp800-207.pdf",
+      "type": "direct",
+      "answerable": true,
+      "gold_ids": [
+        72,
+        108
+      ],
+      "entry_ids": [
+        108,
+        127,
+        186
+      ],
+      "expanded_ids": [
+        107,
+        109,
+        128,
+        185,
+        187
+      ],
+      "context_ids": [
+        107,
+        108,
+        109,
+        127,
+        128,
+        185,
+        186,
+        187
+      ],
+      "gold_in_entries": true,
+      "gold_in_context": true,
+      "context_precision": 0.14370422043948378,
+      "context_chars": 2867,
+      "n_passages": 5,
+      "n_expanded": 5,
+      "best_similarity": 0.7906497716903687,
+      "elapsed_ms": 590.289625004516
+    },
+    {
+      "id": "n04",
+      "doc": "data/real/nist_sp800-207.pdf",
+      "type": "direct",
+      "answerable": true,
+      "gold_ids": [
+        27,
+        28,
+        41,
+        105,
+        153,
+        154,
+        156,
+        166,
+        173,
+        231
+      ],
+      "entry_ids": [
+        154,
+        156,
+        173
+      ],
+      "expanded_ids": [
+        155,
+        157,
+        172,
+        174
+      ],
+      "context_ids": [
+        154,
+        155,
+        156,
+        157,
+        172,
+        173,
+        174
+      ],
+      "gold_in_entries": true,
+      "gold_in_context": true,
+      "context_precision": 0.4108527131782946,
+      "context_chars": 2838,
+      "n_passages": 3,
+      "n_expanded": 4,
+      "best_similarity": 0.7165384292602539,
+      "elapsed_ms": 591.2481250124983
+    },
+    {
+      "id": "n05",
+      "doc": "data/real/nist_sp800-207.pdf",
+      "type": "absent",
+      "answerable": false,
+      "gold_ids": [],
+      "entry_ids": [
+        23,
+        20,
+        6
+      ],
+      "expanded_ids": [],
+      "context_ids": [
+        6,
+        20,
+        23
+      ],
+      "gold_in_entries": false,
+      "gold_in_context": false,
+      "context_precision": 0.0,
+      "context_chars": 1039,
+      "n_passages": 3,
+      "n_expanded": 0,
+      "best_similarity": 0.5238947868347168,
+      "elapsed_ms": 609.7231250023469
+    },
+    {
+      "id": "b01",
+      "doc": "data/real/bert.pdf",
+      "type": "direct",
+      "answerable": true,
+      "gold_ids": [
+        11,
+        40,
+        41,
+        73,
+        74,
+        126,
+        128,
+        130
+      ],
+      "entry_ids": [
+        35,
+        11,
+        10
+      ],
+      "expanded_ids": [
+        9,
+        12,
+        36
+      ],
+      "context_ids": [
+        9,
+        10,
+        11,
+        12,
+        35,
+        36
+      ],
+      "gold_in_entries": true,
+      "gold_in_context": true,
+      "context_precision": 0.17636986301369864,
+      "context_chars": 2336,
+      "n_passages": 3,
+      "n_expanded": 3,
+      "best_similarity": 0.7859452962875366,
+      "elapsed_ms": 602.2570000059204
+    },
+    {
+      "id": "b02",
+      "doc": "data/real/bert.pdf",
+      "type": "direct",
+      "answerable": true,
+      "gold_ids": [
+        0,
+        9
+      ],
+      "entry_ids": [
+        2,
+        0,
+        1
+      ],
+      "expanded_ids": [
+        3
+      ],
+      "context_ids": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "gold_in_entries": true,
+      "gold_in_context": true,
+      "context_precision": 0.2744043043812452,
+      "context_chars": 1301,
+      "n_passages": 1,
+      "n_expanded": 1,
+      "best_similarity": 0.7587279677391052,
+      "elapsed_ms": 606.3545840006554
+    },
+    {
+      "id": "b03",
+      "doc": "data/real/bert.pdf",
+      "type": "comparison",
+      "answerable": true,
+      "gold_ids": [
+        6
+      ],
+      "entry_ids": [
+        6,
+        85,
+        84
+      ],
+      "expanded_ids": [
+        5,
+        7,
+        83,
+        86
+      ],
+      "context_ids": [
+        5,
+        6,
+        7,
+        83,
+        84,
+        85,
+        86
+      ],
+      "gold_in_entries": true,
+      "gold_in_context": true,
+      "context_precision": 0.11819960861056751,
+      "context_chars": 2555,
+      "n_passages": 2,
+      "n_expanded": 4,
+      "best_similarity": 0.7625967264175415,
+      "elapsed_ms": 615.6393749988638
+    }
+  ],
+  "summary": {
+    "overall": {
+      "n_answerable": 23,
+      "n_absent": 5,
+      "gold_in_entries": 0.8695652173913043,
+      "gold_in_context": 0.8695652173913043,
+      "context_precision": 0.25361180424493024,
+      "context_chars_answerable": 2107.086956521739,
+      "context_chars_absent": 1136.6,
+      "absent_best_similarity_max": 0.6906574964523315,
+      "answerable_best_similarity_min": 0.6570242643356323,
+      "mean_elapsed_ms": 306.8912455019017
+    },
+    "per_doc": {
+      "data/formula_sample.pdf": {
+        "n": 6,
+        "gold_in_entries": 1.0,
+        "gold_in_context": 1.0,
+        "context_precision": 0.3827007715875759,
+        "context_chars": 1488.1666666666667
+      },
+      "data/real/bert.pdf": {
+        "n": 3,
+        "gold_in_entries": 1.0,
+        "gold_in_context": 1.0,
+        "context_precision": 0.18965792533517045,
+        "context_chars": 2064.0
+      },
+      "data/real/nist_sp800-207.pdf": {
+        "n": 4,
+        "gold_in_entries": 1.0,
+        "gold_in_context": 1.0,
+        "context_precision": 0.21870259529594235,
+        "context_chars": 2948.0
+      },
+      "data/real/rag_survey.pdf": {
+        "n": 6,
+        "gold_in_entries": 0.6666666666666666,
+        "gold_in_context": 0.6666666666666666,
+        "context_precision": 0.15511680398130792,
+        "context_chars": 3130.3333333333335
+      },
+      "data/sample.pdf": {
+        "n": 4,
+        "gold_in_entries": 0.75,
+        "gold_in_context": 0.75,
+        "context_precision": 0.29059547175770284,
+        "context_chars": 692.0
+      }
+    }
+  }
+}

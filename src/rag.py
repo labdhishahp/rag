@@ -25,7 +25,7 @@ Why the evidence gate is deterministic (Phase 3):
 
 import re
 
-from config import DEFAULT_TOP_K, SIMILARITY_SOFT_FLOOR
+from config import DEFAULT_TOP_K, SIMILARITY_HARD_FLOOR, SIMILARITY_SOFT_FLOOR
 from conversation import Conversation
 from context_builder import (
     DEFAULT_CONTEXT_BUDGET_CHARS,
@@ -57,7 +57,7 @@ class RAGSystem:
         retriever: Retriever,
         llm: LLMClient,
         top_k: int | None = None,
-        similarity_threshold: float = DEFAULT_SIMILARITY_THRESHOLD,
+        similarity_threshold: float | None = None,
         embedding_dimension: int | None = None,
         neighbour_window: int | None = None,
         context_budget_chars: int | None = None,
@@ -68,7 +68,19 @@ class RAGSystem:
         # None means "let the request decide" (query_understanding); a value
         # pins it (an explicit caller override).
         self.top_k = top_k
-        self.similarity_threshold = similarity_threshold
+
+        # The similarity floors belong to whichever embedding provider built
+        # this retriever's index — a 0.62 hit means different things under
+        # bge-small and gemini-embedding-001. Taking them from the provider
+        # rather than from a module constant is what keeps the evidence gate
+        # correct when documents in the system were embedded by different
+        # providers. See embeddings.py and config.py.
+        provider = retriever.embedding_model
+        self.hard_floor = getattr(provider, "hard_floor", SIMILARITY_HARD_FLOOR)
+        self.soft_floor = getattr(provider, "soft_floor", SIMILARITY_SOFT_FLOOR)
+        self.similarity_threshold = (
+            similarity_threshold if similarity_threshold is not None else self.soft_floor
+        )
         self.embedding_dimension = (
             embedding_dimension or retriever.embedding_model.dimension
         )
@@ -136,6 +148,8 @@ class RAGSystem:
             self.retriever.vector_store,
             neighbour_window=window,
             budget_chars=budget,
+            hard_floor=self.hard_floor,
+            soft_floor=self.soft_floor,
             debug=self.debug,
         )
 
