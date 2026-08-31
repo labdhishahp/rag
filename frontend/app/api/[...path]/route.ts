@@ -42,6 +42,12 @@ const STRIP = new Set([
   "host",
   "connection",
   "content-length",
+  // Vercel delivers non-GET requests to this function chunked. The body below
+  // is a fixed-size buffer, so replaying this header would describe the
+  // outgoing request as something it is not, and undici rejects the pair with
+  // "invalid transfer-encoding header" -- every POST/DELETE failing as an
+  // unreachable backend. Local dev never sets it, so it only bites deployed.
+  "transfer-encoding",
   "accept-encoding",
   "x-api-key",       // never let a caller supply their own
   "x-client-id",     // set from the real address below, not from user input

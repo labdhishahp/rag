@@ -16,3 +16,6 @@ data/real/
 
 # pytest
 .pytest_cache/
+
+# Vercel CLI link + pulled dev env (added by `vercel link`)
+.vercel
