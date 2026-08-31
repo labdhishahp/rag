@@ -58,6 +58,7 @@ no database and no configuration.
 from __future__ import annotations
 
 import json
+import logging
 import os
 import time
 import uuid
@@ -69,6 +70,8 @@ from typing import Optional
 import numpy as np
 
 from .rag_bridge import Conversation, Retriever, VectorStore
+
+logger = logging.getLogger("rag_api")
 
 # Hydrated retrievers, keyed by document_id. A warm serverless instance serving
 # consecutive turns of one conversation should not re-read the same vectors from
@@ -348,8 +351,14 @@ class PostgresStorage(Storage):
                 cur.execute("SELECT 1")
                 cur.fetchone()
             return True, None
-        except Exception as exc:  # noqa: BLE001 - surfaced on /health, never raised
-            return False, str(exc)
+        except Exception:  # noqa: BLE001 - surfaced on /health, never raised
+            # The detail goes to the server log and nowhere else. libpq puts the
+            # entire connection string -- password included -- into the message
+            # for a connection-time failure, and /health is unauthenticated on
+            # purpose, so returning the exception text would hand the database
+            # credential to anyone who asks for it.
+            logger.exception("Storage health check failed")
+            return False, "database unreachable"
 
     # -- documents ---------------------------------------------------------
     def save_document(self, metadata, chunks, embeddings):
