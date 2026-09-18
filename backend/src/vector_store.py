@@ -105,9 +105,25 @@ class VectorStore:
             return None
         return dict(self.chunks[position])
 
-    def search(self, query_embedding: np.ndarray, top_k: int = 3) -> list[dict]:
+    def search(
+        self,
+        query_embedding: np.ndarray,
+        top_k: int = 3,
+        document_ids: set[str] | None = None,
+    ) -> list[dict]:
         """
         Find the top_k most similar chunks to the query embedding.
+
+        document_ids — optional filter, used when the question named a
+        document ("what does the NIST report say about ..."). We already sort
+        every row to rank them, so filtering costs nothing extra: walk the
+        sorted order and skip chunks belonging to other documents until top_k
+        have survived. That is exact, not approximate — unlike the over-fetch
+        a FAISS index would have needed, which can run out of candidates.
+
+        With no filter the behaviour is unchanged, deliberately: the same rows
+        in the same order with the same ranks, so every existing measurement
+        (recall@3 = 0.826) still holds.
 
         Returns a COPY of each matching chunk's full metadata, plus two
         search-specific fields:
@@ -141,13 +157,33 @@ class VectorStore:
         # A stable descending sort: ties resolve to the lower row index, which
         # is the order a flat index reports them in. Only the top_k slice is
         # ordered, but at this corpus size a full argsort is not worth avoiding.
-        order = np.argsort(-scores, kind="stable")[:top_k]
+        order = np.argsort(-scores, kind="stable")
+        if document_ids is None:
+            # Unfiltered: slice first, exactly as before the filter existed.
+            order = order[:top_k]
 
         results: list[dict] = []
-        for rank, position in enumerate(order, start=1):
-            result = dict(self.chunks[int(position)])
+        for position in order:
+            chunk = self.chunks[int(position)]
+            if document_ids is not None and chunk.get("document_id") not in document_ids:
+                continue
+            result = dict(chunk)
             result["similarity"] = float(scores[position])
-            result["rank"] = rank
+            # Rank is the position among the chunks that SURVIVED the filter,
+            # so a scoped search still reports 1, 2, 3 — context_builder uses
+            # rank as an expansion priority and would otherwise see gaps.
+            result["rank"] = len(results) + 1
             results.append(result)
+            if len(results) >= top_k:
+                break
 
         return results
+
+    def chunks_for_document(self, document_id: str) -> list[dict]:
+        """
+        All stored chunks of one document, in reading order (copies).
+
+        Summarisation needs this: you cannot retrieve "the whole document" by
+        similarity, so the summary plan walks the chunks in order instead.
+        """
+        return [dict(c) for c in self.chunks if c.get("document_id") == document_id]

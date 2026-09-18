@@ -71,6 +71,84 @@ _WEAK_EVIDENCE_NOTE = (
 )
 
 
+def build_compare_prompt(question, subject_a, subject_b, evidence, missing=None,
+                         depth="normal", conversation=None) -> str:
+    """
+    Comparison: two labelled evidence sets, one structured answer.
+
+    The evidence arrives as "=== A: <subject> ===" [A#]-labelled passages and
+    "=== B: <subject> ===" [B#]-labelled passages, so the model can attribute
+    each claim to the right side and the citation checker can verify it.
+    """
+    missing_note = ""
+    if missing:
+        missing_note = (
+            f"\nNOTE: no relevant evidence was found for: {', '.join(missing)}. Say so plainly for "
+            "that side and do not invent anything about it; still describe the other side from its evidence.\n"
+        )
+    length = {
+        "brief": "Keep it short: the two or three most important differences.",
+        "normal": "Cover the main differences and any stated similarities.",
+        "detailed": "Be thorough: definitions, mechanisms, and every difference the evidence supports.",
+    }.get(depth, "Cover the main differences and any stated similarities.")
+    conv = f"\nCONVERSATION SO FAR (for reference resolution only, not evidence):\n{conversation}\n" if conversation else ""
+    return f"""You are a knowledge assistant comparing two subjects using ONLY the evidence below.
+
+Rules:
+1. Use ONLY facts from the EVIDENCE. No outside knowledge, no assumptions.
+2. Cite inline with the passage labels ([A1], [B2]...). Facts about "{subject_a}" must cite A-labels; facts about "{subject_b}" must cite B-labels.
+3. If the evidence does not support a claimed difference, do not state it. If a side has no evidence, say so.
+4. Never invent numbers, names, formulas or facts.
+{missing_note}
+Answer structure:
+**{subject_a}** — what the evidence says (with citations)
+**{subject_b}** — what the evidence says (with citations)
+**Key differences** — point by point
+**Similarities** — only if the evidence supports any
+{length}
+{conv}
+EVIDENCE:
+{evidence}
+
+USER QUESTION:
+{question}
+
+ANSWER:"""
+
+
+def build_summary_prompt(question, document_name, sections, evidence, depth="normal") -> str:
+    """
+    Summary: the evidence is a skeleton of the whole document in reading order
+    (the opening of every section), not the chunks most similar to "summary".
+    """
+    outline = "\n".join(f"- {s}" for s in sections[:40]) if sections else "(no headings detected)"
+    length = {
+        "brief": "Three to five sentences.",
+        "normal": "One short paragraph on the purpose, then the main points as a bulleted list (one per major section).",
+        "detailed": "A paragraph on the purpose, then a section-by-section account of the key points.",
+    }.get(depth, "One short paragraph on the purpose, then the main points as a bulleted list.")
+    return f"""You are a knowledge assistant summarising a document using ONLY the evidence below.
+
+The document is "{document_name}". Its section headings, in order:
+{outline}
+
+Rules:
+1. Summarise ONLY what the EVIDENCE contains. Do not add background knowledge about the topic.
+2. Cite the passage each point comes from, e.g. [S3].
+3. Do not invent sections, numbers, or conclusions that are not in the evidence.
+4. If the evidence is only a skeleton (openings of sections), summarise what is there and do not guess at the rest.
+
+Length: {length}
+
+EVIDENCE (openings of each section, in reading order):
+{evidence}
+
+USER REQUEST:
+{question}
+
+SUMMARY:"""
+
+
 _CONVERSATION_RULE = (
     "7. The CONVERSATION SO FAR is there so you can resolve references like \"it\", \"that\" or "
     "\"the previous one\" in the user's latest message. It is NOT evidence: never cite it and "

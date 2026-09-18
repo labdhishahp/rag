@@ -32,6 +32,7 @@ from context_builder import (
     DEFAULT_NEIGHBOUR_WINDOW,
     build_context,
     citation_for,
+    labels_for,
 )
 from llm import LLMClient
 from prompt_builder import REFUSAL_TEXT, build_rag_prompt
@@ -41,7 +42,10 @@ from retriever import Retriever
 # Exposed as a name for callers; the value itself lives in config.py.
 DEFAULT_SIMILARITY_THRESHOLD = SIMILARITY_SOFT_FLOOR
 
-_CITATION = re.compile(r"\[S(\d{1,2})\]")
+# One or more labels inside one pair of brackets: [S1], [A2], [S1, S3], [B1,B2].
+# The prefix is a letter group so a comparison's [A#]/[B#] labels are matched
+# too, and grouping is supported because models write "[S1, S3]" unprompted.
+_CITATION = re.compile(r"\[((?:[A-Z]{1,2}\d{1,2})(?:[,\s]+[A-Z]{1,2}\d{1,2})*)\]")
 
 
 class RAGSystem:
@@ -90,7 +94,12 @@ class RAGSystem:
         self.context_budget_chars = context_budget_chars
         self.debug = debug
 
-    def answer(self, question: str, conversation: Conversation | None = None) -> dict:
+    def answer(
+        self,
+        question: str,
+        conversation: Conversation | None = None,
+        document_ids: set[str] | None = None,
+    ) -> dict:
         """
         Answer one user message.
 
@@ -99,6 +108,10 @@ class RAGSystem:
         shown to the model for reference resolution. The conversation is NOT
         updated here; the caller records the turn (see record_turn), so a
         failed call never leaves a half-written history.
+
+        document_ids — optional. Restrict retrieval to these documents. The
+        assistant sets this when the user named a document; None means search
+        everything the store holds.
         """
         question = question.strip()
         if not question:
@@ -131,13 +144,13 @@ class RAGSystem:
                 print(f"  {retrieval_query}")
 
         # Step 1: Retrieve entry-point chunks by pure similarity.
-        chunks = self.retriever.retrieve(retrieval_query, top_k=top_k)
+        chunks = self.retriever.retrieve(retrieval_query, top_k=top_k, document_ids=document_ids)
         if follow_up:
             # Also retrieve with the raw message and keep its best hits. A poor
             # augmentation must never hide a match the bare message would have
             # found ("And in 2023?" matches the 2023 chunk on its own; glued to
             # the 2024 question it drifts to 2024).
-            raw_hits = self.retriever.retrieve(question, top_k=top_k)
+            raw_hits = self.retriever.retrieve(question, top_k=top_k, document_ids=document_ids)
             chunks = _merge_hits(chunks, raw_hits, keep_secondary=2)
         best_similarity = chunks[0]["similarity"] if chunks else 0.0
         low_confidence = best_similarity < self.similarity_threshold
@@ -174,7 +187,7 @@ class RAGSystem:
         )
 
         # Step 5: Verify citations against the labels that actually exist.
-        answer, cited = _check_citations(answer, len(context.passages))
+        answer, cited = check_citations(answer, labels_for(context.passages))
 
         result = self._result(
             question, understanding, answer, chunks, context,
@@ -263,27 +276,43 @@ def _merge_hits(primary: list[dict], secondary: list[dict], keep_secondary: int 
     return merged
 
 
-def _check_citations(answer: str, n_passages: int) -> tuple[str, list[int]]:
+def check_citations(answer: str, valid_labels: list[str]) -> tuple[str, list[int]]:
     """
     Keep citations that point at real passages; strip the ones that do not.
 
     A model can emit "[S7]" when only four passages exist. Leaving that in
     would show the user a source that does not exist — the one thing a citation
-    must never do. Returns the cleaned answer and the sorted list of valid
-    labels actually used.
+    must never do. Grouped citations ("[S1, S3]") are handled per label, so a
+    valid one is kept even when it shares brackets with an invalid one.
+
+    Takes the exact labels rather than a count, because a comparison produces
+    two independent sets ([A1..] and [B1..]) and a label from one side must not
+    validate against the other.
+
+    Returns the cleaned answer and the sorted 1-based positions into
+    valid_labels of the labels actually used.
     """
+    valid = {label: i + 1 for i, label in enumerate(valid_labels)}
     used: set[int] = set()
 
-    def keep_or_drop(match: re.Match) -> str:
-        n = int(match.group(1))
-        if 1 <= n <= n_passages:
-            used.add(n)
-            return match.group(0)
-        return ""
+    def rewrite(match: re.Match) -> str:
+        kept = []
+        for token in re.split(r"[,\s]+", match.group(1)):
+            if token in valid:
+                used.add(valid[token])
+                kept.append(token)
+        return f"[{', '.join(kept)}]" if kept else ""
 
-    cleaned = _CITATION.sub(keep_or_drop, answer)
+    cleaned = _CITATION.sub(rewrite, answer)
     cleaned = re.sub(r" {2,}", " ", cleaned)
+    # Removing a citation can leave a space before its sentence's punctuation.
+    cleaned = re.sub(r" ([.,;:])", r"\1", cleaned)
     return cleaned.strip(), sorted(used)
+
+
+def _check_citations(answer: str, n_passages: int) -> tuple[str, list[int]]:
+    """Backwards-compatible name: positional [S#] labels, given a count."""
+    return check_citations(answer, [f"S{i}" for i in range(1, n_passages + 1)])
 
 
 def extract_source_pages(context) -> list[int]:
