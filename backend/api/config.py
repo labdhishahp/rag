@@ -47,7 +47,9 @@ class Settings:
         # host); to accept larger files on Vercel the upload has to go to blob
         # storage directly from the browser, with the function fetching it.
         self.max_upload_bytes = int(os.getenv("MAX_UPLOAD_BYTES", str(4 * 1024 * 1024)))
-        self.llm_provider = os.getenv("LLM_PROVIDER", "gemini")
+        # Used when a chat request does not name a provider. There is no
+        # fallback: an unavailable provider is an error, not a substitution.
+        self.llm_provider = os.getenv("LLM_PROVIDER", "anthropic")
         # Unset -> in-memory storage (local dev and tests). Set -> Postgres.
         self.database_url = os.getenv("DATABASE_URL") or None
 

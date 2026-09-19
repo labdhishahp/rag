@@ -49,14 +49,11 @@ def _check_deployment_config() -> None:
 async def lifespan(app: FastAPI):
     logger.info("Starting up...")
     _check_deployment_config()
-    state = AppState.build(
-        database_url=settings.database_url,
-        llm_provider=settings.llm_provider,
-    )
+    state = AppState.build(database_url=settings.database_url)
     app.state.rag_state = state
     logger.info(
-        "Startup complete. llm_configured=%s storage=%s",
-        state.llm is not None,
+        "Startup complete. llm_providers=%s storage=%s",
+        state.available_llms or "none",
         type(state.storage).__name__,
     )
     yield

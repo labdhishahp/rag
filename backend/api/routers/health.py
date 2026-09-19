@@ -2,6 +2,7 @@
 
 from fastapi import APIRouter, Request
 
+from ..config import settings
 from ..rag_bridge import EmbeddingError
 
 router = APIRouter(tags=["health"])
@@ -36,8 +37,13 @@ def health(request: Request):
         "status": "ok" if (storage_ok and embedding_ok) else "degraded",
         "embedding_primary": "huggingface",
         "embedding_providers": providers,
-        "llm_configured": state.llm is not None,
-        "llm_error": state.llm_init_error,
+        # Per provider, so the UI can offer only what will actually answer.
+        "llm_providers": {
+            name: {"available": err is None, **({} if err is None else {"error": err})}
+            for name, err in state.llm_status.items()
+        },
+        "llm_default": settings.llm_provider,
+        "llm_configured": bool(state.available_llms),
         "storage": type(state.storage).__name__,
         "storage_ok": storage_ok,
         "storage_error": storage_error,

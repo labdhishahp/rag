@@ -25,6 +25,9 @@ python-docx>=1.1.0
 numpy>=1.26.0
 
 # --- embeddings + generation ----------------------------------------------
+# Anthropic is the PRIMARY generation provider; google-genai is the fallback
+# AND the embedding fallback, so both are runtime dependencies.
+anthropic>=1.0.0
 google-genai>=1.0.0
 
 # --- persistence -----------------------------------------------------------

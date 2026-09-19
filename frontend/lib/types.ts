@@ -21,6 +21,9 @@ export interface UploadResponse {
   document: DocumentMetadata;
 }
 
+/** The models a request may choose between. Mirrors ChatRequest.provider. */
+export type LlmProvider = "anthropic" | "gemini";
+
 export type EvidenceLevel = "none" | "weak" | "ok";
 export type AnswerDepth = "brief" | "normal" | "detailed";
 
@@ -46,6 +49,8 @@ export interface ChatResponse {
   low_confidence: boolean;
   refused: boolean;
   llm_called: boolean;
+  /** Which provider generated this answer — recorded, never assumed. */
+  llm_provider: LlmProvider | null;
   llm_model: string | null;
   evidence_level: EvidenceLevel;
   best_similarity: number;
@@ -70,13 +75,20 @@ export interface EmbeddingProviderHealth {
   error?: string;
 }
 
+export interface LlmProviderHealth {
+  available: boolean;
+  error?: string;
+}
+
 export interface HealthResponse {
   /** "ok" only when storage AND at least one embedding provider are reachable. */
   status: "ok" | "degraded";
   embedding_primary: string;
   embedding_providers: Record<string, EmbeddingProviderHealth>;
+  /** Per provider, so the UI offers only what will actually answer. */
+  llm_providers: Record<string, LlmProviderHealth>;
+  llm_default: LlmProvider;
   llm_configured: boolean;
-  llm_error: string | null;
   /** Which storage backend is in use, e.g. "PostgresStorage". */
   storage: string;
   /** False when the database cannot be reached. An upload WILL fail. */

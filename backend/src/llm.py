@@ -1,14 +1,22 @@
 """
 LLM module — isolated, replaceable text generation.
 
-Provider: Google Gemini (gemini-2.0-flash)
-  - Free-tier friendly for learning projects
-  - Strong instruction-following for grounded Q&A
-  - Official SDK: google-genai
+Two providers, and the CALLER chooses which one answers:
+
+    anthropic   claude-opus-5 via the official anthropic SDK
+    gemini      gemini-3.5-flash-lite via google-genai
 
 Why isolate the LLM?
-  Retrieval and prompting should not depend on which API vendor you use.
-  Swap providers by implementing LLMClient in this module only.
+  Retrieval and prompting do not depend on which API vendor you use. Swap or
+  add a provider by implementing LLMClient in this module only — nothing in
+  rag.py, the retriever or the prompt builder knows a provider name.
+
+Why there is NO provider fallback here:
+  The user selects the provider per request, so substituting a different one
+  would answer a question they did not ask and label the answer with a model
+  that did not produce it. create_llm() therefore builds exactly what was asked
+  for, or raises. (embeddings.py DOES fall back, for reasons specific to vector
+  spaces — see create_llm's docstring for the contrast.)
 
 Why can the LLM still hallucinate even with RAG?
   The model is a probabilistic text generator. It may ignore instructions,
@@ -61,6 +69,15 @@ MODEL_FALLBACKS = [
     "gemini-3.5-flash-lite",
     "gemini-3.1-flash-lite",
 ]
+
+# --- Anthropic (primary) ---------------------------------------------------
+# Pinned for the same reason the Gemini model is: a moving alias would change
+# answers between runs and make it impossible to tell whether a retrieval change
+# helped or the model did.
+ANTHROPIC_MODEL = "claude-opus-5"
+# A ceiling, not a target — answers here are short. Sized to stay well inside
+# the SDK's default HTTP timeout on a non-streaming request.
+ANTHROPIC_MAX_TOKENS = 16000
 
 
 def _get_api_key() -> str:
@@ -128,6 +145,8 @@ class LLMClient(ABC):
 
 class GeminiClient(LLMClient):
     """Google Gemini API implementation using the official google-genai SDK."""
+
+    name = "gemini"
 
     def __init__(
         self,
@@ -210,8 +229,136 @@ class GeminiClient(LLMClient):
             ) from exc
 
 
-def create_llm(provider: str = "gemini") -> LLMClient:
-    """Factory function to create an LLM client."""
-    if provider == "gemini":
-        return GeminiClient()
-    raise ValueError(f"Unknown LLM provider: {provider}")
+class AnthropicClient(LLMClient):
+    """
+    Anthropic Claude. PRIMARY provider.
+
+    Why primary: generation here is grounded extraction under strict rules —
+    cite the passage a fact came from, refuse when the evidence does not
+    support an answer. Instruction-following is the whole job. It also removes
+    the free-tier cliff that makes Gemini switch models mid-session (see
+    MODEL_FALLBACKS above), which is what made answers unattributable.
+
+    Two differences from the Gemini client, both required rather than stylistic:
+
+      no temperature   Claude Opus 5 rejects temperature/top_p/top_k with a 400.
+                       Determinism is instead a property of the prompt, which
+                       already pins the answer to the evidence block.
+
+      stop_reason      A response can come back with stop_reason "refusal" and
+                       no text. Checked before reading content, so a refusal
+                       surfaces as a clear LLMError rather than an IndexError.
+
+    Anthropic does NOT offer an embedding model, so this changes generation
+    only. Embeddings stay on Hugging Face with the Gemini fallback.
+    """
+
+    name = "anthropic"
+
+    def __init__(self, model: str = ANTHROPIC_MODEL, api_key: Optional[str] = None):
+        try:
+            import anthropic
+        except ImportError as exc:
+            raise ImportError(
+                "anthropic package is required. Install with: pip install anthropic"
+            ) from exc
+
+        key = api_key or os.getenv("ANTHROPIC_API_KEY")
+        if not key:
+            raise ValueError(
+                "ANTHROPIC_API_KEY not found. Copy .env.example to .env and set your API key."
+            )
+        self.model = model
+        self.active_model = model
+        self._anthropic = anthropic
+        self._client = anthropic.Anthropic(api_key=key)
+
+    def generate(self, prompt: str) -> str:
+        a = self._anthropic
+        try:
+            response = self._client.messages.create(
+                model=self.active_model,
+                max_tokens=ANTHROPIC_MAX_TOKENS,
+                messages=[{"role": "user", "content": prompt}],
+            )
+        # Most specific first: the 4xx classes below all subclass APIStatusError,
+        # and APITimeoutError subclasses APIConnectionError.
+        except a.AuthenticationError as exc:
+            logger.exception("Anthropic authentication error")
+            raise LLMError(
+                "Invalid API key. Check ANTHROPIC_API_KEY in your .env file."
+            ) from exc
+        except a.NotFoundError as exc:
+            logger.exception("Anthropic model not found")
+            raise LLMError(
+                f"The model '{self.active_model}' is not available to this API key."
+            ) from exc
+        except a.RateLimitError as exc:
+            logger.exception("Anthropic rate limit")
+            raise LLMError(
+                "The Anthropic API rate limit was exceeded. Please wait and try again."
+            ) from exc
+        except a.APIStatusError as exc:
+            logger.exception("Anthropic API error")
+            raise LLMError(
+                "The Anthropic API returned an error. See terminal logs for details."
+            ) from exc
+        except a.APIConnectionError as exc:
+            logger.exception("Anthropic connection error")
+            raise LLMError(
+                "Could not reach the Anthropic API. Please try again later."
+            ) from exc
+        except Exception as exc:  # noqa: BLE001 - mirrors GeminiClient's last resort
+            logger.exception("Unexpected Anthropic LLM error")
+            raise LLMError(
+                "An unexpected error occurred while calling the LLM. "
+                "See terminal logs for details."
+            ) from exc
+
+        if getattr(response, "stop_reason", None) == "refusal":
+            raise LLMError("The model declined to answer this request.")
+
+        # content is a list of blocks; only the text ones carry the answer.
+        text = "".join(
+            block.text for block in response.content if block.type == "text"
+        ).strip()
+        if not text:
+            raise LLMError("The LLM returned an empty response.")
+        return text
+
+
+# The providers a caller may choose from. The API validates against this list,
+# so an unknown name is rejected before any client is constructed.
+LLM_PROVIDERS = ("anthropic", "gemini")
+
+# The provider used when a request does not name one.
+DEFAULT_LLM_PROVIDER = os.getenv("LLM_PROVIDER", "anthropic").strip().lower()
+
+_LLM_BUILDERS = {"anthropic": AnthropicClient, "gemini": GeminiClient}
+
+
+def create_llm(provider: str = DEFAULT_LLM_PROVIDER) -> LLMClient:
+    """
+    Build one named LLM client. Raises if it cannot be constructed.
+
+    THERE IS DELIBERATELY NO PROVIDER FALLBACK HERE.
+
+    The user chooses which model answers their question, so answering with a
+    different one would be answering a question they did not ask — and the
+    answer would carry a provider label that did not produce it, which is the
+    same class of dishonesty as a citation pointing at the wrong passage.
+    A missing key surfaces as an error naming the provider instead.
+
+    Note the contrast with embeddings.py, which DOES fall back: there the
+    fallback happens at INDEX time and is recorded on the document, because two
+    embedding models produce incomparable coordinate systems and a query must
+    use the one that indexed the document. Two LLMs both read the same evidence
+    block, so the constraint is the user's intent rather than correctness.
+    """
+    try:
+        builder = _LLM_BUILDERS[provider]
+    except KeyError:
+        raise ValueError(
+            f"Unknown LLM provider {provider!r}. Expected one of {sorted(_LLM_BUILDERS)}."
+        ) from None
+    return builder()

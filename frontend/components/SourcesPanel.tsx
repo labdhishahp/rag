@@ -73,6 +73,7 @@ export default function SourcesPanel({ result }: { result: ChatResponse }) {
               </li>
               <li>
                 LLM called: {result.llm_called ? "yes" : "no (declined on evidence)"}
+                {result.llm_provider ? <> · <code>{result.llm_provider}</code></> : null}
                 {result.llm_model ? <> · model <code>{result.llm_model}</code></> : null}
               </li>
             </ul>

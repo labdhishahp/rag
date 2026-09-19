@@ -37,7 +37,7 @@ from embeddings import (  # noqa: E402
     create_provider,
     provider_for_indexing,
 )
-from llm import LLMClient, LLMError, create_llm  # noqa: E402
+from llm import LLM_PROVIDERS, LLMClient, LLMError, create_llm  # noqa: E402
 from pipeline import DocumentProcessingError, index_document_from_upload  # noqa: E402
 from rag import RAGSystem  # noqa: E402
 from retriever import Retriever  # noqa: E402
@@ -46,6 +46,7 @@ from vector_store import VectorStore  # noqa: E402
 logger = logging.getLogger("rag_api")
 
 __all__ = [
+    "LLM_PROVIDERS",
     "SUPPORTED_EXTENSIONS",
     "Conversation",
     "EmbeddingError",
@@ -92,15 +93,13 @@ class AppState:
     serverless instance cannot be trusted to still exist on the next request.
     """
 
-    def __init__(
-        self,
-        llm: Optional[LLMClient],
-        llm_init_error: Optional[str],
-        storage,
-        retrievers,
-    ):
-        self.llm = llm
-        self.llm_init_error = llm_init_error
+    def __init__(self, storage, retrievers):
+        # provider name -> client, built once per process. Mirrors _providers
+        # below; the two caches are the same idea applied to the two vendors.
+        self._llms: dict[str, LLMClient] = {}
+        # provider name -> None when usable, else why it is not. Probed at
+        # startup so /health can tell the UI which options to offer.
+        self.llm_status: dict[str, Optional[str]] = {}
         self.storage = storage
         self.retrievers = retrievers
         # Built on demand and kept, because constructing one is cheap but not
@@ -109,19 +108,48 @@ class AppState:
         self._providers: dict[str, object] = {}
 
     @classmethod
-    def build(cls, *, database_url: Optional[str] = None, llm_provider: str = "gemini") -> "AppState":
+    def build(cls, *, database_url: Optional[str] = None) -> "AppState":
         from .storage import RetrieverCache, create_storage
 
-        llm: Optional[LLMClient] = None
-        llm_init_error: Optional[str] = None
-        try:
-            llm = create_llm(llm_provider)
-        except Exception as exc:  # noqa: BLE001 - missing/invalid key, not a crash
-            llm_init_error = str(exc)
-            logger.warning("LLM not configured at startup: %s", llm_init_error)
-
         storage = create_storage(database_url)
-        return cls(llm, llm_init_error, storage, RetrieverCache(storage))
+        state = cls(storage, RetrieverCache(storage))
+
+        # Probe every provider rather than picking one. Construction only checks
+        # that a key is present and builds a client, so this costs no API call —
+        # and it means the UI can grey out a provider instead of offering it and
+        # failing at the moment the user asks a question.
+        for name in LLM_PROVIDERS:
+            try:
+                state._llms[name] = create_llm(name)
+                state.llm_status[name] = None
+            except Exception as exc:  # noqa: BLE001 - missing key/SDK, not a crash
+                state.llm_status[name] = str(exc)
+                logger.warning("LLM provider %r unavailable: %s", name, exc)
+        return state
+
+    # ---- LLM providers ----------------------------------------------------
+    @property
+    def available_llms(self) -> list[str]:
+        """Providers a request may select right now."""
+        return [n for n, err in self.llm_status.items() if err is None]
+
+    def llm_for(self, name: str) -> LLMClient:
+        """
+        The client for exactly this provider. NEVER substitutes another one —
+        the user chose it, and an answer labelled with a model that did not
+        produce it is the same class of error as a wrong citation.
+
+        Raises if it cannot be built; the router turns that into a 503 naming
+        the provider.
+        """
+        cached = self._llms.get(name)
+        if cached is not None:
+            return cached
+        # Unavailable at startup: retry once, in case configuration changed.
+        client = create_llm(name)
+        self._llms[name] = client
+        self.llm_status[name] = None
+        return client
 
     # ---- embedding providers ---------------------------------------------
     def provider(self, name: str):
@@ -210,6 +238,7 @@ def serialize_answer_result(result: dict) -> dict:
             "low_confidence": result["low_confidence"],
             "refused": result["refused"],
             "llm_called": result["llm_called"],
+            "llm_provider": result["llm_provider"],
             "llm_model": result["llm_model"],
             "evidence_level": context.evidence_level,
             "best_similarity": result["best_similarity"],
