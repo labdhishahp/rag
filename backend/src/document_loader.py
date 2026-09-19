@@ -23,7 +23,27 @@ from pdf_layout import extract_pages
 # Target size for grouping DOCX paragraphs into pseudo-pages.
 _DOCX_PAGE_TARGET_CHARS = 1500
 
-SUPPORTED_EXTENSIONS = {".pdf", ".docx"}
+# Same idea for plain text and source files: they have no pages either, so
+# lines are grouped into parts of roughly this size.
+_TEXT_PART_TARGET_CHARS = 1500
+
+# Source and text files. Everything here is read as UTF-8 and kept verbatim —
+# see load_text_from_bytes for why that matters.
+TEXT_EXTENSIONS = {".py", ".js", ".ts", ".jsx", ".tsx", ".md", ".txt"}
+
+SUPPORTED_EXTENSIONS = {".pdf", ".docx"} | TEXT_EXTENSIONS
+
+# What counts as a section heading in a text file.
+#
+# For code: a definition starting at column 0. Indented definitions (methods,
+# nested functions) are deliberately excluded — the section label should be the
+# enclosing top-level unit, which is how a developer navigates a file.
+_CODE_DEFINITION = re.compile(
+    r"^(?:export\s+(?:default\s+)?)?(?:async\s+)?"
+    r"(?:def|class|function|interface|type|enum|struct)\s+\w+"
+)
+# For Markdown: an ATX heading.
+_MARKDOWN_HEADING = re.compile(r"^#{1,6}\s+\S")
 
 
 def load_pdf(pdf_path: Union[str, Path]) -> list[dict]:    #Create a function called load_pdf that accepts a file path and returns a list of dictionaries.
@@ -138,6 +158,98 @@ def load_docx_from_bytes(docx_bytes: bytes) -> list[dict]:
     return pages
 
 
+def load_text_from_bytes(file_bytes: bytes, filename: str) -> list[dict]:
+    """
+    Read a plain text or source file into the common page format.
+
+    Why this is not just "decode and hand it over":
+
+      1. A source file has no pages, so lines are grouped into parts of
+         ~_TEXT_PART_TARGET_CHARS. Labelled "part", never "page", for the same
+         reason .docx is — we must not tell the user "page 3" of a file that
+         has no page 3. The useful navigation for code is the SECTION label,
+         which here is the enclosing top-level definition.
+
+      2. The text is kept VERBATIM. Every other loader normalises whitespace,
+         because PDF extraction produces ragged spacing that means nothing. In
+         a source file leading whitespace IS syntax — collapsing it turns valid
+         Python into invalid Python in the evidence the model reads, and in the
+         passage shown to the user. "preserve_text" tells the chunker to skip
+         its normalisation step (see chunker.page_text_for_chunking).
+
+    Headings are top-level definitions (`def`, `class`, `function`, `export`,
+    `interface`, ...) or Markdown `#` headings, so a chunk inside a function
+    carries that function as its section — and neighbour expansion, which is
+    already bounded by section, stays inside the definition it started in.
+    """
+    if not file_bytes:
+        raise ValueError("The uploaded file is empty.")
+
+    # errors="replace" rather than raising: one stray byte in an otherwise
+    # readable file should not lose the whole upload.
+    text = file_bytes.decode("utf-8", errors="replace")
+    if not text.strip():
+        raise ValueError("No readable text found in the file.")
+
+    is_markdown = Path(filename).suffix.lower() == ".md"
+
+    def is_section(line: str) -> bool:
+        if is_markdown:
+            return bool(_MARKDOWN_HEADING.match(line))
+        # Column 0 only: an indented `def` is a method, not a new section.
+        return line[:1] not in (" ", "\t") and bool(_CODE_DEFINITION.match(line))
+
+    pages: list[dict] = []
+    buffer: list[str] = []
+    headings: list[str] = []
+    char_count = 0
+    part = 1
+    # Fenced code inside Markdown contains lines like "# 2. start the frontend",
+    # which are shell comments, not headings. Labelling a chunk with one would
+    # produce a citation that looks verifiable and is not — the same reason the
+    # PDF path is conservative about what it calls a heading.
+    in_fence = False
+
+    def close_part() -> None:
+        pages.append(
+            {
+                "page_number": part,
+                "page_label": "part",
+                "text": "\n".join(buffer),
+                "headings": list(headings),
+                "structured": True,
+                # Do not normalise this text — indentation is meaningful.
+                "preserve_text": True,
+            }
+        )
+
+    for line in text.split("\n"):
+        if is_markdown and line.lstrip().startswith("```"):
+            in_fence = not in_fence
+        heading = is_section(line) and not in_fence
+
+        # Prefer to break at a top-level definition rather than mid-function, so
+        # a section rarely straddles a part boundary. The hard cap is the escape
+        # hatch: a file with no definitions at all (a plain .txt, or one long
+        # class) would otherwise never break and become a single huge part.
+        at_boundary = char_count >= _TEXT_PART_TARGET_CHARS and heading
+        too_big = char_count >= _TEXT_PART_TARGET_CHARS * 3
+        if buffer and (at_boundary or too_big):
+            close_part()
+            part += 1
+            buffer, headings, char_count = [], [], 0
+
+        buffer.append(line)
+        if heading:
+            headings.append(line)
+        char_count += len(line) + 1
+
+    if buffer:
+        close_part()
+
+    return pages
+
+
 def load_document_from_bytes(file_bytes: bytes, filename: str) -> list[dict]:
     """
     Route uploaded bytes to the correct loader based on file extension.
@@ -153,6 +265,8 @@ def load_document_from_bytes(file_bytes: bytes, filename: str) -> list[dict]:
         return load_pdf_from_bytes(file_bytes)
     if ext == ".docx":
         return load_docx_from_bytes(file_bytes)
+    if ext in TEXT_EXTENSIONS:
+        return load_text_from_bytes(file_bytes, filename)
 
     supported = ", ".join(sorted(SUPPORTED_EXTENSIONS))
     raise ValueError(

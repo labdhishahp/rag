@@ -71,6 +71,11 @@ def page_text_for_chunking(page: dict) -> str:
     a cleaner directly, or the offset invariant is being checked against the
     wrong string.
     """
+    # Source files opt out of normalisation: leading whitespace is syntax, and
+    # collapsing it would put invalid code in the evidence block and in the
+    # passage shown to the user. See document_loader.load_text_from_bytes.
+    if page.get("preserve_text"):
+        return page["text"]
     if page.get("structured"):
         lines = [" ".join(line.split()) for line in page["text"].split("\n")]
         return "\n".join(line for line in lines if line)

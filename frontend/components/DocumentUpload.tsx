@@ -42,7 +42,9 @@ export default function DocumentUpload({
         <input
           ref={inputRef}
           type="file"
-          accept=".pdf,.docx"
+          // Mirrors document_loader.SUPPORTED_EXTENSIONS. The backend
+          // re-validates; this only narrows the file picker.
+          accept=".pdf,.docx,.py,.js,.ts,.jsx,.tsx,.md,.txt"
           disabled={uploading || disabledReason !== null}
           onChange={(e) => {
             const file = e.target.files?.[0];
@@ -54,13 +56,16 @@ export default function DocumentUpload({
             ? "Upload unavailable"
             : uploading
               ? `Indexing ${fileName ?? "document"}…`
-              : "Upload a PDF or Word document"}
+              : "Upload a document or source file"}
         </span>
       </label>
       {disabledReason ? (
         <p className="warning-note">{disabledReason}</p>
       ) : (
-        <p className="hint">One document at a time. A new upload starts a new conversation.</p>
+        <p className="hint">
+          PDF, Word, or source files (.py .js .ts .jsx .tsx .md .txt). One at a time; a new
+          upload starts a new conversation.
+        </p>
       )}
 
       {uploading && <div className="spinner" role="status" aria-label="Indexing document" />}

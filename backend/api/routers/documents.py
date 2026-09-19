@@ -12,6 +12,7 @@ from ..security import AUTH, UPLOAD_LIMIT
 from ..rag_bridge import (
     DocumentProcessingError,
     EmbeddingError,
+    SUPPORTED_EXTENSIONS,
     index_document_from_upload,
     public_document_metadata,
 )
@@ -19,7 +20,10 @@ from ..rag_bridge import (
 logger = logging.getLogger("rag_api")
 router = APIRouter(tags=["documents"])
 
-ALLOWED_EXTENSIONS = {".pdf", ".docx"}
+# Taken from the loader rather than repeated here: two lists that must agree
+# will eventually disagree, and the failure would be a confusing 400 on a file
+# type the pipeline can actually read.
+ALLOWED_EXTENSIONS = SUPPORTED_EXTENSIONS
 
 
 @router.post("/api/documents", dependencies=[AUTH, UPLOAD_LIMIT])
