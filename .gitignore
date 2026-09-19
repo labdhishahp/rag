@@ -11,11 +11,10 @@ __pycache__/
 .env.*
 !.env.example
 
-# Real-document validation corpus: fetched by scripts/fetch_real_docs.py, never committed
+# Larger validation PDFs used by the retrieval eval. Not ours to redistribute,
+# so they are downloaded on demand rather than committed; the eval skips any
+# document it cannot find.
 data/real/
-
-# pytest
-.pytest_cache/
 
 # Vercel CLI link + pulled dev env (added by `vercel link`)
 .vercel
