@@ -23,6 +23,12 @@ function newId(): string {
 export default function KnowledgeAssistant() {
   const [backendStatus, setBackendStatus] = useState<BackendStatus>("checking");
   const [llmConfigured, setLlmConfigured] = useState(true);
+  // Storage health is reported by /health but was previously ignored here, so a
+  // dead database rendered a perfectly healthy-looking app that only failed at
+  // the moment of upload. Uploading needs the database (documents, chunks and
+  // vectors are all persisted), so when it is unreachable we say so up front
+  // rather than letting the user pick a file and wait for a 500.
+  const [storageOk, setStorageOk] = useState(true);
 
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [document, setDocument] = useState<DocumentMetadata | null>(null);
@@ -42,6 +48,7 @@ export default function KnowledgeAssistant() {
       const health = await getHealth();
       setBackendStatus("up");
       setLlmConfigured(health.llm_configured);
+      setStorageOk(health.storage_ok);
     } catch {
       setBackendStatus("down");
     }
@@ -136,6 +143,7 @@ export default function KnowledgeAssistant() {
           document={document}
           onIndexed={handleIndexed}
           onError={(message) => setErrorBanner(message)}
+          disabledReason={storageOk ? null : "The document store is unavailable — uploads are paused."}
         />
 
         <div className="settings-panel">
@@ -176,6 +184,29 @@ export default function KnowledgeAssistant() {
             </div>
           )}
         </div>
+
+        {/* The database holds every document, chunk, vector and conversation.
+            Without it an upload cannot be saved, so this is stated before the
+            user picks a file rather than after the request fails. */}
+        {!storageOk && (
+          <div className="storage-banner" role="alert">
+            <div>
+              <strong>The document store is unavailable.</strong>
+              <p>
+                Uploading is paused because documents could not be saved. Existing answers are
+                unaffected. If this is a hosted demo the database may be asleep — it usually comes
+                back within a minute.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => void checkHealth()}
+              aria-label="Check the connection again"
+            >
+              Check again
+            </button>
+          </div>
+        )}
 
         {errorBanner && (
           <div className="error-banner" role="alert">

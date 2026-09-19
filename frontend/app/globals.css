@@ -156,6 +156,13 @@ code {
   display: block;
   cursor: pointer;
 }
+/* Uploading needs the database. When it is unreachable the control is disabled
+   rather than left inviting, so the failure is visible before the file picker
+   opens instead of after the request returns 500. */
+.upload-control.is-disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
 
 .upload-control input[type="file"] {
   display: block;
@@ -233,6 +240,47 @@ code {
   background: var(--warning-bg);
   padding: 0.5rem;
   border-radius: 6px;
+}
+
+/* ------------------------------------------------- storage unavailable */
+
+/* Distinct from .error-banner: that reports something the user just did that
+   failed; this reports a condition that will make the NEXT thing they do fail,
+   so it is not dismissible and it carries its own recheck. */
+.storage-banner {
+  background: var(--warning-bg);
+  border: 1px solid var(--danger-border);
+  color: var(--warning-text);
+  padding: 0.7rem 0.9rem;
+  border-radius: 8px;
+  margin-bottom: 1rem;
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 1rem;
+  font-size: 0.9rem;
+}
+
+.storage-banner p {
+  margin: 0.3rem 0 0;
+  font-size: 0.85rem;
+  line-height: 1.45;
+  opacity: 0.9;
+}
+
+.storage-banner button {
+  flex: none;
+  background: none;
+  border: 1px solid currentColor;
+  color: inherit;
+  border-radius: 6px;
+  padding: 0.3rem 0.7rem;
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+
+.storage-banner button:hover {
+  background: rgba(127, 127, 127, 0.12);
 }
 
 /* ----------------------------------------------------------------- errors */
