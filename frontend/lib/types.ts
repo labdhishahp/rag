@@ -26,6 +26,9 @@ export type LlmProvider = "anthropic" | "gemini";
 
 export type EvidenceLevel = "none" | "weak" | "ok";
 export type AnswerDepth = "brief" | "normal" | "detailed";
+/** Which plan produced the answer. Chosen from the question text alone,
+ *  independently of the LLM provider. */
+export type AnswerTask = "answer" | "summarize" | "compare";
 
 export interface Passage {
   text: string;
@@ -41,6 +44,7 @@ export interface Passage {
 
 export interface ChatResponse {
   question: string;
+  task: AnswerTask;
   retrieval_query: string;
   was_follow_up: boolean;
   answer: string;

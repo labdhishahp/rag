@@ -7,7 +7,14 @@ from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field
 
 from ..config import settings
-from ..rag_bridge import LLMError, RAGSystem, serialize_answer_result
+from ..rag_bridge import (
+    LLMError,
+    RAGSystem,
+    compare_task,
+    route_task,
+    serialize_answer_result,
+    summarize_task,
+)
 from ..security import AUTH, QUESTION_LIMIT
 
 logger = logging.getLogger("rag_api")
@@ -59,8 +66,20 @@ def chat(payload: ChatRequest, request: Request):
         debug=False,
     )
 
+    # WHICH TASK, decided from the text alone and completely independent of
+    # which provider was chosen above. Every branch below returns the same
+    # result shape and reuses the same context, citation and verification code
+    # — there is one pipeline, with three ways of choosing evidence.
+    task = route_task(question)
+    dims = session.metadata.get("embedding_dimension")
     try:
-        result = rag.answer(question, session.conversation)
+        if task.kind == "summarize":
+            result = summarize_task(session.retriever, llm, question, embedding_dimension=dims)
+        elif task.kind == "compare":
+            result = compare_task(session.retriever, llm, question,
+                                  task.parts[0], task.parts[1], embedding_dimension=dims)
+        else:
+            result = rag.answer(question, session.conversation)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except LLMError as exc:

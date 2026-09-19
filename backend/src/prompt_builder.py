@@ -71,6 +71,102 @@ _WEAK_EVIDENCE_NOTE = (
 )
 
 
+def build_summary_prompt(question, document_name, sections, evidence,
+                        depth="normal", coverage=None) -> str:
+    """
+    Summary: the evidence is a SKELETON of the whole document in reading order —
+    the opening of every section — not the chunks most similar to the word
+    "summary".
+
+    The outline is passed separately from the evidence so the model knows the
+    document's true shape even where the evidence is thin, and so it cannot
+    invent a section that does not exist.
+
+    coverage — (shown, total) sections when the document was too large to
+    represent every section; the model is told to say so rather than imply the
+    summary is complete.
+    """
+    outline = "\n".join(f"- {s}" for s in sections[:60]) if sections else "(no headings detected)"
+    length = {
+        "brief": "Three to five sentences.",
+        "normal": "One short paragraph on the purpose, then the main points as a bulleted list (one per major section).",
+        "detailed": "A paragraph on the purpose, then a section-by-section account of the key points.",
+    }.get(depth, "One short paragraph on the purpose, then the main points as a bulleted list.")
+    coverage_note = ""
+    if coverage and coverage[0] < coverage[1]:
+        coverage_note = (
+            f"\nNOTE: this document has {coverage[1]} sections and the evidence below samples "
+            f"{coverage[0]} of them, spread across the document. Say plainly that the summary is "
+            "based on a sample; do not imply it covers everything.\n"
+        )
+    return f"""You are a knowledge assistant summarising a document using ONLY the evidence below.
+
+The document is "{document_name}". Its sections, in order:
+{outline}
+
+Rules:
+1. Summarise ONLY what the EVIDENCE contains. Do not add background knowledge about the topic.
+2. Cite the passage each point comes from, e.g. [S3].
+3. Do not invent sections, numbers, or conclusions that are not in the evidence.
+4. The evidence is the OPENING of each section, not its full text. Summarise what is there; do not guess how a section continues.
+{coverage_note}
+Length: {length}
+
+EVIDENCE (section openings, in reading order):
+{evidence}
+
+USER REQUEST:
+{question}
+
+SUMMARY:"""
+
+
+def build_compare_prompt(question, subject_a, subject_b, evidence, missing=None,
+                         depth="normal", conversation=None) -> str:
+    """
+    Comparison: two labelled evidence sets, one structured answer.
+
+    Evidence arrives as "=== A: <subject> ===" with [A#] labels and
+    "=== B: <subject> ===" with [B#] labels, so the model attributes each claim
+    to the right side — and rag.check_citations verifies it against that side's
+    labels only.
+    """
+    missing_note = ""
+    if missing:
+        missing_note = (
+            f"\nNOTE: no relevant evidence was found for: {', '.join(missing)}. Say so plainly for "
+            "that side and do not invent anything about it; still describe the other side from its evidence.\n"
+        )
+    length = {
+        "brief": "Keep it short: the two or three most important differences.",
+        "normal": "Cover the main differences and any stated similarities.",
+        "detailed": "Be thorough: definitions, mechanisms, and every difference the evidence supports.",
+    }.get(depth, "Cover the main differences and any stated similarities.")
+    conv = f"\nCONVERSATION SO FAR (for reference resolution only, not evidence):\n{conversation}\n" if conversation else ""
+    return f"""You are a knowledge assistant comparing two subjects using ONLY the evidence below.
+
+Rules:
+1. Use ONLY facts from the EVIDENCE. No outside knowledge, no assumptions.
+2. Cite inline with the passage labels ([A1], [B2]...). Facts about "{subject_a}" must cite A-labels; facts about "{subject_b}" must cite B-labels.
+3. If the evidence does not support a claimed difference, do not state it. If a side has no evidence, say so.
+4. Never invent numbers, names, formulas or facts.
+{missing_note}
+Answer structure:
+**{subject_a}** — what the evidence says (with citations)
+**{subject_b}** — what the evidence says (with citations)
+**Key differences** — point by point
+**Similarities** — only if the evidence supports any
+{length}
+{conv}
+EVIDENCE:
+{evidence}
+
+USER QUESTION:
+{question}
+
+ANSWER:"""
+
+
 _CONVERSATION_RULE = (
     "7. The CONVERSATION SO FAR is there so you can resolve references like \"it\", \"that\" or "
     "\"the previous one\" in the user's latest message. It is NOT evidence: never cite it and "

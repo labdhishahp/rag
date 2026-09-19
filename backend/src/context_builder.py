@@ -513,14 +513,17 @@ def citation_for(passage: Passage) -> str:
     return " — ".join(parts)
 
 
-def format_passages(passages: list[Passage]) -> str:
+def format_passages(passages: list[Passage], label_prefix: str = "S") -> str:
     """
     Render passages as a numbered evidence block.
 
     Why numbered labels ([S1], [S2]): they give the model a stable handle for
-    each source. This is the groundwork for inline citations later; right now
-    they simply keep the sources visually separate so the model does not blur
-    two documents together.
+    each source, which the answer cites inline and rag.py verifies afterwards.
+
+    label_prefix lets a comparison label two evidence sets [A1..] and [B1..].
+    That is not cosmetic: the citation checker validates each side against its
+    OWN label list, so a claim about subject A cannot cite subject B's
+    evidence and pass verification.
     """
     if not passages:
         return "(No document passages were retrieved.)"
@@ -531,8 +534,19 @@ def format_passages(passages: list[Passage]) -> str:
         # found, so salience is not lost when passages are in reading order
         # rather than score order. Pure expansions are labelled as context.
         tag = "(matched)" if passage.entry_chunk_ids else "(surrounding context)"
-        blocks.append(f"[S{number}] {citation_for(passage)} {tag}\n{passage.text}")
+        blocks.append(f"[{label_prefix}{number}] {citation_for(passage)} {tag}\n{passage.text}")
     return "\n\n".join(blocks)
+
+
+def labels_for(passages: list[Passage], label_prefix: str = "S") -> list[str]:
+    """
+    The citation labels format_passages would emit, e.g. ['S1', 'S2'].
+
+    The checker needs the exact labels that exist, not just how many, because a
+    comparison produces two independent sets and a label from one side must not
+    validate against the other.
+    """
+    return [f"{label_prefix}{i}" for i in range(1, len(passages) + 1)]
 
 
 def print_context_debug(result: ContextResult) -> None:

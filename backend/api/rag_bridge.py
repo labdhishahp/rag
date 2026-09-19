@@ -40,6 +40,8 @@ from embeddings import (  # noqa: E402
 from llm import LLM_PROVIDERS, LLMClient, LLMError, create_llm  # noqa: E402
 from pipeline import DocumentProcessingError, index_document_from_upload  # noqa: E402
 from rag import RAGSystem  # noqa: E402
+from task_router import route as route_task  # noqa: E402
+from tasks import compare as compare_task, summarize as summarize_task  # noqa: E402
 from retriever import Retriever  # noqa: E402
 from vector_store import VectorStore  # noqa: E402
 
@@ -56,6 +58,9 @@ __all__ = [
     "DocumentProcessingError",
     "index_document_from_upload",
     "RAGSystem",
+    "route_task",
+    "summarize_task",
+    "compare_task",
     "Retriever",
     "VectorStore",
     "AppState",
@@ -230,6 +235,7 @@ def serialize_answer_result(result: dict) -> dict:
     return _sanitize(
         {
             "question": result["question"],
+            "task": result["task"],
             "retrieval_query": result["retrieval_query"],
             "was_follow_up": result["was_follow_up"],
             "answer": result["answer"],
