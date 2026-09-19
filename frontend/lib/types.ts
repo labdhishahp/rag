@@ -63,14 +63,26 @@ export interface ChatResponse {
   top_k: number;
 }
 
+export interface EmbeddingProviderHealth {
+  available: boolean;
+  model?: string;
+  dimension?: number;
+  error?: string;
+}
+
 export interface HealthResponse {
-  status: string;
-  embedding_model_loaded: boolean;
-  embedding_model_name: string | null;
-  embedding_dimension: number | null;
+  /** "ok" only when storage AND at least one embedding provider are reachable. */
+  status: "ok" | "degraded";
+  embedding_primary: string;
+  embedding_providers: Record<string, EmbeddingProviderHealth>;
   llm_configured: boolean;
   llm_error: string | null;
-  active_sessions: number;
+  /** Which storage backend is in use, e.g. "PostgresStorage". */
+  storage: string;
+  /** False when the database cannot be reached. An upload WILL fail. */
+  storage_ok: boolean;
+  /** Deliberately vague server-side; the detail stays in the server log. */
+  storage_error: string | null;
 }
 
 // One entry in the on-screen conversation. Kept client-side only — the

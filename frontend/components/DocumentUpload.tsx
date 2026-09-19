@@ -8,10 +8,13 @@ export default function DocumentUpload({
   document,
   onIndexed,
   onError,
+  disabledReason = null,
 }: {
   document: DocumentMetadata | null;
   onIndexed: (upload: UploadResponse) => void;
   onError: (message: string) => void;
+  /** When set, uploading is blocked and this explains why. */
+  disabledReason?: string | null;
 }) {
   const [uploading, setUploading] = useState(false);
   const [fileName, setFileName] = useState<string | null>(null);
@@ -35,20 +38,30 @@ export default function DocumentUpload({
   return (
     <div className="document-panel">
       <h2>Document</h2>
-      <label className="upload-control">
+      <label className={disabledReason ? "upload-control is-disabled" : "upload-control"}>
         <input
           ref={inputRef}
           type="file"
           accept=".pdf,.docx"
-          disabled={uploading}
+          disabled={uploading || disabledReason !== null}
           onChange={(e) => {
             const file = e.target.files?.[0];
             if (file) void handleFile(file);
           }}
         />
-        <span>{uploading ? `Indexing ${fileName ?? "document"}…` : "Upload a PDF or Word document"}</span>
+        <span>
+          {disabledReason
+            ? "Upload unavailable"
+            : uploading
+              ? `Indexing ${fileName ?? "document"}…`
+              : "Upload a PDF or Word document"}
+        </span>
       </label>
-      <p className="hint">One document at a time. A new upload starts a new conversation.</p>
+      {disabledReason ? (
+        <p className="warning-note">{disabledReason}</p>
+      ) : (
+        <p className="hint">One document at a time. A new upload starts a new conversation.</p>
+      )}
 
       {uploading && <div className="spinner" role="status" aria-label="Indexing document" />}
 
