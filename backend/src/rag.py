@@ -32,6 +32,7 @@ from context_builder import (
     DEFAULT_NEIGHBOUR_WINDOW,
     build_context,
     citation_for,
+    labels_for,
 )
 from llm import LLMClient
 from prompt_builder import REFUSAL_TEXT, build_rag_prompt
@@ -41,7 +42,15 @@ from retriever import Retriever
 # Exposed as a name for callers; the value itself lives in config.py.
 DEFAULT_SIMILARITY_THRESHOLD = SIMILARITY_SOFT_FLOOR
 
-_CITATION = re.compile(r"\[S(\d{1,2})\]")
+# One or more labels inside one pair of brackets: [S1], [A2], [S1, S3], [B1,B2].
+# The prefix is a letter group so a comparison's [A#]/[B#] labels match too, and
+# grouping is supported because models write "[S1, S3]" unprompted.
+#
+# \d+ rather than \d{1,2}: a bounded digit count means an oversized label like
+# [S999] does not MATCH, so it is never examined and survives verification —
+# exactly the invented source citations exist to prevent. A summary can easily
+# carry more than 99 passages, which is how this was found.
+_CITATION = re.compile(r"\[((?:[A-Z]{1,2}\d+)(?:[,\s]+[A-Z]{1,2}\d+)*)\]")
 
 
 class RAGSystem:
@@ -174,7 +183,7 @@ class RAGSystem:
         )
 
         # Step 5: Verify citations against the labels that actually exist.
-        answer, cited = _check_citations(answer, len(context.passages))
+        answer, cited = check_citations(answer, labels_for(context.passages))
 
         result = self._result(
             question, understanding, answer, chunks, context,
@@ -203,39 +212,77 @@ class RAGSystem:
     def _result(self, question, understanding, answer, chunks, context,
                 best_similarity, low_confidence, llm_called, cited,
                 retrieval_query=None) -> dict:
-        source_citations = [citation_for(p) for p in context.passages]
-        return {
-            "question": question,
-            "retrieval_query": retrieval_query or question,
-            "was_follow_up": (retrieval_query or question) != question,
-            "answer": answer,
-            "depth": understanding.depth,
-            "understanding": understanding,
-            "sources": extract_source_pages(context),
-            "source_citations": source_citations,
-            # Passages the model actually cited, 1-based, in label order.
-            "cited_sources": [source_citations[i - 1] for i in cited if 0 < i <= len(source_citations)],
-            "cited_labels": cited,
-            # Entry-point similarity hits. Kept under the original key so the
-            # original key so existing callers keep working unchanged.
-            "chunks": chunks,
-            "best_similarity": best_similarity,
-            "low_confidence": low_confidence,
-            "top_k": len(chunks),
-            "llm_provider": getattr(self.llm, "name", None),
-            "llm_model": getattr(self.llm, "active_model", None),
-            "embedding_dimension": self.embedding_dimension,
-            "num_retrieved_chunks": len(chunks),
-            "context": context,
-            "entry_chunk_ids": context.entry_chunk_ids,
-            "expanded_chunk_ids": context.expanded_chunk_ids,
-            "dropped_chunk_ids": context.dropped_chunk_ids,
-            "context_chars": context.total_chars,
-            "duplicate_chars_removed": context.duplicate_chars_removed,
-            "evidence_level": context.evidence_level,
-            "llm_called": llm_called,
-            "refused": answer.strip().startswith(REFUSAL_TEXT),
-        }
+        return build_result(
+            question=question, understanding=understanding, answer=answer,
+            context=context, llm=self.llm, chunks=chunks,
+            best_similarity=best_similarity, low_confidence=low_confidence,
+            llm_called=llm_called, cited=cited, retrieval_query=retrieval_query,
+            embedding_dimension=self.embedding_dimension, task="answer",
+        )
+
+
+def build_result(
+    *,
+    question,
+    understanding,
+    answer,
+    context,
+    llm,
+    task: str = "answer",
+    chunks=None,
+    best_similarity: float = 0.0,
+    low_confidence: bool = False,
+    llm_called: bool = True,
+    cited=(),
+    retrieval_query=None,
+    embedding_dimension=None,
+) -> dict:
+    """
+    The one result shape every task kind returns.
+
+    Shared rather than duplicated on purpose: the API serializer, the
+    conversation recorder and the UI all read these keys, so a second builder
+    would be a second contract to keep in sync — and drifting from it is how
+    "one pipeline" quietly becomes two.
+
+    `cited` holds 1-based positions into the label list that was verified, and
+    `context.passages` is in the SAME order, which is what makes cited_sources
+    correct for a comparison whose labels are [A1..][B1..].
+    """
+    chunks = list(chunks or [])
+    source_citations = [citation_for(p) for p in context.passages]
+    return {
+        "question": question,
+        "task": task,
+        "retrieval_query": retrieval_query or question,
+        "was_follow_up": (retrieval_query or question) != question,
+        "answer": answer,
+        "depth": understanding.depth,
+        "understanding": understanding,
+        "sources": extract_source_pages(context),
+        "source_citations": source_citations,
+        # Passages the model actually cited, 1-based, in label order.
+        "cited_sources": [source_citations[i - 1] for i in cited if 0 < i <= len(source_citations)],
+        "cited_labels": list(cited),
+        # Entry-point similarity hits. Empty for tasks that do not search.
+        "chunks": chunks,
+        "best_similarity": best_similarity,
+        "low_confidence": low_confidence,
+        "top_k": len(chunks),
+        "llm_provider": getattr(llm, "name", None),
+        "llm_model": getattr(llm, "active_model", None),
+        "embedding_dimension": embedding_dimension,
+        "num_retrieved_chunks": len(chunks),
+        "context": context,
+        "entry_chunk_ids": context.entry_chunk_ids,
+        "expanded_chunk_ids": context.expanded_chunk_ids,
+        "dropped_chunk_ids": context.dropped_chunk_ids,
+        "context_chars": context.total_chars,
+        "duplicate_chars_removed": context.duplicate_chars_removed,
+        "evidence_level": context.evidence_level,
+        "llm_called": llm_called,
+        "refused": answer.strip().startswith(REFUSAL_TEXT),
+    }
 
 
 def _merge_hits(primary: list[dict], secondary: list[dict], keep_secondary: int = 2) -> list[dict]:
@@ -264,26 +311,38 @@ def _merge_hits(primary: list[dict], secondary: list[dict], keep_secondary: int 
     return merged
 
 
-def _check_citations(answer: str, n_passages: int) -> tuple[str, list[int]]:
+def check_citations(answer: str, valid_labels: list[str]) -> tuple[str, list[int]]:
     """
     Keep citations that point at real passages; strip the ones that do not.
 
-    A model can emit "[S7]" when only four passages exist. Leaving that in
-    would show the user a source that does not exist — the one thing a citation
-    must never do. Returns the cleaned answer and the sorted list of valid
-    labels actually used.
+    A model can emit "[S7]" when only four passages exist. Leaving that in would
+    show the user a source that does not exist — the one thing a citation must
+    never do. Grouped citations ("[S1, S3]") are handled per label, so a valid
+    one survives sharing brackets with an invalid one.
+
+    Takes the exact labels rather than a count, because a comparison produces
+    two independent sets ([A1..] and [B1..]) and a label from one side must not
+    validate against the other. That is what stops a claim about subject A
+    citing subject B's evidence and passing verification.
+
+    Returns the cleaned answer and the sorted 1-based positions into
+    valid_labels of the labels actually used.
     """
+    valid = {label: i + 1 for i, label in enumerate(valid_labels)}
     used: set[int] = set()
 
-    def keep_or_drop(match: re.Match) -> str:
-        n = int(match.group(1))
-        if 1 <= n <= n_passages:
-            used.add(n)
-            return match.group(0)
-        return ""
+    def rewrite(match: re.Match) -> str:
+        kept = []
+        for token in re.split(r"[,\s]+", match.group(1)):
+            if token in valid:
+                used.add(valid[token])
+                kept.append(token)
+        return f"[{', '.join(kept)}]" if kept else ""
 
-    cleaned = _CITATION.sub(keep_or_drop, answer)
+    cleaned = _CITATION.sub(rewrite, answer)
     cleaned = re.sub(r" {2,}", " ", cleaned)
+    # Removing a citation can leave a space before its sentence's punctuation.
+    cleaned = re.sub(r" ([.,;:])", r"\1", cleaned)
     return cleaned.strip(), sorted(used)
 
 

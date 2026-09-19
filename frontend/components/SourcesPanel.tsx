@@ -45,7 +45,7 @@ export default function SourcesPanel({ result }: { result: ChatResponse }) {
             <h4>Retrieval</h4>
             <ul className="detail-list">
               <li>
-                Request read as: <code>{result.depth}</code>
+                Task: <code>{result.task}</code> · request read as: <code>{result.depth}</code>
                 {result.wants_example ? " · asked for an example" : ""}
               </li>
               {result.was_follow_up && (
