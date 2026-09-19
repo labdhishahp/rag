@@ -222,6 +222,7 @@ class RAGSystem:
             "best_similarity": best_similarity,
             "low_confidence": low_confidence,
             "top_k": len(chunks),
+            "llm_provider": getattr(self.llm, "name", None),
             "llm_model": getattr(self.llm, "active_model", None),
             "embedding_dimension": self.embedding_dimension,
             "num_retrieved_chunks": len(chunks),

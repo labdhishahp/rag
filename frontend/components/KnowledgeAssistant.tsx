@@ -9,12 +9,23 @@ import {
   isBackendUnreachable,
   resetConversation,
 } from "@/lib/api";
-import type { ChatMessage, DocumentMetadata, UploadResponse } from "@/lib/types";
+import type {
+  ChatMessage,
+  DocumentMetadata,
+  LlmProvider,
+  LlmProviderHealth,
+  UploadResponse,
+} from "@/lib/types";
 import DocumentUpload from "./DocumentUpload";
 import InspectorPanel, { type InspectorView } from "./InspectorPanel";
 import MessageBubble from "./MessageBubble";
 
 type BackendStatus = "checking" | "up" | "down";
+
+const PROVIDER_LABELS: Record<string, string> = {
+  anthropic: "Claude (Anthropic)",
+  gemini: "Gemini (Google)",
+};
 
 function newId(): string {
   return Math.random().toString(36).slice(2);
@@ -29,6 +40,11 @@ export default function KnowledgeAssistant() {
   // vectors are all persisted), so when it is unreachable we say so up front
   // rather than letting the user pick a file and wait for a 500.
   const [storageOk, setStorageOk] = useState(true);
+  // Which model answers. Sent per request; the server honours it exactly and
+  // refuses by name rather than substituting the other provider. Only the NAME
+  // leaves the browser — both API keys stay server-side.
+  const [provider, setProvider] = useState<LlmProvider | null>(null);
+  const [llmProviders, setLlmProviders] = useState<Record<string, LlmProviderHealth>>({});
 
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [document, setDocument] = useState<DocumentMetadata | null>(null);
@@ -49,6 +65,13 @@ export default function KnowledgeAssistant() {
       setBackendStatus("up");
       setLlmConfigured(health.llm_configured);
       setStorageOk(health.storage_ok);
+      setLlmProviders(health.llm_providers ?? {});
+      // The configured server default, EVEN IF IT IS UNAVAILABLE. Picking a
+      // different one here would be the same silent substitution the backend
+      // refuses to make — the user would get an answer from a model nobody
+      // chose. An unusable default is a configuration error, and it is shown
+      // as one. A choice the user has already made is never overridden.
+      setProvider((current) => current ?? health.llm_default ?? null);
     } catch {
       setBackendStatus("down");
     }
@@ -94,7 +117,7 @@ export default function KnowledgeAssistant() {
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     const question = input.trim();
-    if (!question || !sessionId || asking) return;
+    if (!question || !sessionId || asking || providerBroken) return;
 
     setInput("");
     setErrorBanner(null);
@@ -102,7 +125,7 @@ export default function KnowledgeAssistant() {
     setAsking(true);
 
     try {
-      const result = await askQuestion(sessionId, question);
+      const result = await askQuestion(sessionId, question, provider ?? undefined);
       setMessages((prev) => [...prev, { id: newId(), role: "assistant", content: result.answer, result }]);
     } catch (error) {
       if (isBackendUnreachable(error)) {
@@ -135,6 +158,9 @@ export default function KnowledgeAssistant() {
   }
 
   const documentReady = sessionId !== null;
+  // Only false once health has actually reported on the selected provider;
+  // unknown (still loading) must not flash an error.
+  const providerBroken = provider !== null && llmProviders[provider]?.available === false;
 
   return (
     <div className="app-shell">
@@ -151,6 +177,24 @@ export default function KnowledgeAssistant() {
           <label className="toggle-row">
             <input type="checkbox" checked={showDebug} onChange={(e) => setShowDebug(e.target.checked)} />
             Show retrieval details under each answer
+          </label>
+          {/* Per-request model choice. Unavailable providers are disabled
+              rather than hidden, so a missing key is visible instead of
+              looking like the option never existed. */}
+          <label className="setting-row">
+            <span>Answer with</span>
+            <select
+              value={provider ?? ""}
+              onChange={(e) => setProvider(e.target.value as LlmProvider)}
+              disabled={Object.keys(llmProviders).length === 0}
+            >
+              {Object.entries(llmProviders).map(([name, health]) => (
+                <option key={name} value={name} disabled={!health.available}>
+                  {PROVIDER_LABELS[name] ?? name}
+                  {health.available ? "" : " — not configured"}
+                </option>
+              ))}
+            </select>
           </label>
           <button type="button" onClick={() => void handleNewConversation()} disabled={messages.length === 0}>
             New conversation
@@ -184,6 +228,24 @@ export default function KnowledgeAssistant() {
             </div>
           )}
         </div>
+
+        {/* The selected provider cannot answer. Stated before the question is
+            typed rather than after a 503, and NOT worked around by choosing a
+            different model. */}
+        {providerBroken && provider && (
+          <div className="provider-banner" role="alert">
+            <div>
+              <strong>{PROVIDER_LABELS[provider] ?? provider} is not configured on this server.</strong>
+              <p>
+                Questions will fail until its API key is set. Pick the other provider above if you
+                want an answer now — that is an explicit choice, and it will be labelled as such.
+              </p>
+            </div>
+            <button type="button" onClick={() => void checkHealth()} aria-label="Check the connection again">
+              Check again
+            </button>
+          </div>
+        )}
 
         {/* The database holds every document, chunk, vector and conversation.
             Without it an upload cannot be saved, so this is stated before the
@@ -248,10 +310,16 @@ export default function KnowledgeAssistant() {
             type="text"
             value={input}
             onChange={(e) => setInput(e.target.value)}
-            placeholder={documentReady ? "Ask a question about your document…" : "Upload a document to begin"}
-            disabled={!documentReady || asking}
+            placeholder={
+              providerBroken
+                ? "Select a configured provider to ask a question"
+                : documentReady
+                  ? "Ask a question about your document…"
+                  : "Upload a document to begin"
+            }
+            disabled={!documentReady || asking || providerBroken}
           />
-          <button type="submit" disabled={!documentReady || asking || !input.trim()}>
+          <button type="submit" disabled={!documentReady || asking || providerBroken || !input.trim()}>
             Send
           </button>
         </form>

@@ -4,6 +4,7 @@
 
 import type {
   ChatResponse,
+  LlmProvider,
   ChunkEmbedding,
   ChunksResponse,
   HealthResponse,
@@ -76,11 +77,23 @@ export function uploadDocument(file: File): Promise<UploadResponse> {
   return request<UploadResponse>("/documents", { method: "POST", body: formData });
 }
 
-export function askQuestion(sessionId: string, question: string, topK?: number): Promise<ChatResponse> {
+/** `provider` selects which model answers. Omitted means the server default.
+ *  Only the NAME crosses the wire — both API keys stay server-side. */
+export function askQuestion(
+  sessionId: string,
+  question: string,
+  provider?: LlmProvider,
+  topK?: number,
+): Promise<ChatResponse> {
   return request<ChatResponse>("/chat", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ session_id: sessionId, question, top_k: topK ?? null }),
+    body: JSON.stringify({
+      session_id: sessionId,
+      question,
+      provider: provider ?? null,
+      top_k: topK ?? null,
+    }),
   });
 }
 

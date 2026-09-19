@@ -1,11 +1,12 @@
 """Ask a question of an indexed document: retrieve, gate, generate, cite."""
 
 import logging
-from typing import Optional
+from typing import Literal, Optional
 
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field
 
+from ..config import settings
 from ..rag_bridge import LLMError, RAGSystem, serialize_answer_result
 from ..security import AUTH, QUESTION_LIMIT
 
@@ -16,6 +17,10 @@ router = APIRouter(tags=["chat"])
 class ChatRequest(BaseModel):
     session_id: str
     question: str
+    # Which model answers. Literal gives allowlist validation for free: an
+    # unknown name is a 422 from Pydantic before any client is constructed.
+    # None means "use the server default" (LLM_PROVIDER).
+    provider: Optional[Literal["anthropic", "gemini"]] = None
     top_k: Optional[int] = Field(default=None, ge=1, le=20)
 
 
@@ -33,15 +38,22 @@ def chat(payload: ChatRequest, request: Request):
             detail="Session not found or expired. Upload a document to start a new one.",
         )
 
-    if state.llm is None:
+    # The user's choice is honoured exactly, or refused by name. Falling back to
+    # the other provider would answer with a model they did not choose and label
+    # the answer with it.
+    provider = payload.provider or settings.llm_provider
+    try:
+        llm = state.llm_for(provider)
+    except Exception as exc:  # noqa: BLE001 - missing key / SDK, not a crash
+        logger.warning("LLM provider %r unavailable: %s", provider, exc)
         raise HTTPException(
             status_code=503,
-            detail=state.llm_init_error or "The LLM is not configured on the server.",
-        )
+            detail=f"The '{provider}' provider is not available on this server.",
+        ) from exc
 
     rag = RAGSystem(
         retriever=session.retriever,
-        llm=state.llm,
+        llm=llm,
         top_k=payload.top_k,
         embedding_dimension=session.metadata.get("embedding_dimension"),
         debug=False,
