@@ -30,6 +30,7 @@ if str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))
 
 from conversation import Conversation  # noqa: E402
+from document_loader import SUPPORTED_EXTENSIONS  # noqa: E402
 from embeddings import (  # noqa: E402
     EmbeddingError,
     EmbeddingModel,
@@ -45,6 +46,7 @@ from vector_store import VectorStore  # noqa: E402
 logger = logging.getLogger("rag_api")
 
 __all__ = [
+    "SUPPORTED_EXTENSIONS",
     "Conversation",
     "EmbeddingError",
     "EmbeddingModel",
